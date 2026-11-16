@@ -1,0 +1,6 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "clipstack-windows",
+  "windows": ["main", "quick", "toast", "preview"],
+  "permissions": ["core:event:default", "core:window:allow-is-maximized"]
+}

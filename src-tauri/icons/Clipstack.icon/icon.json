@@ -1,0 +1,319 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.96078,0.98431,1.00000,1.00000",
+          "extended-srgb:0.57255,0.76471,0.94902,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.18,
+            "y": 0.05
+          },
+          "stop": {
+            "x": 0.7,
+            "y": 0.96
+          }
+        }
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.23137,0.34118,0.51765,1.00000",
+          "extended-srgb:0.08235,0.14902,0.25490,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.18,
+            "y": 0.05
+          },
+          "stop": {
+            "x": 0.7,
+            "y": 0.96
+          }
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "夹扣",
+      "lighting": "individual",
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.24
+      },
+      "layers": [
+        {
+          "name": "夹扣",
+          "image-name": "07-Clasp.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:1.00000,0.94510,0.79608,1.00000",
+                  "extended-srgb:0.93725,0.75294,0.47451,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:1.00000,0.90588,0.70980,1.00000",
+                  "extended-srgb:0.90196,0.70196,0.40392,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "夹扣槽",
+          "image-name": "06-ClaspInset.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:0.39608,0.49804,0.60784,1.00000",
+                  "extended-srgb:0.25098,0.36863,0.51373,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:0.16078,0.22353,0.33333,1.00000",
+                  "extended-srgb:0.07059,0.13725,0.23137,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "纸面内容",
+      "layers": [
+        {
+          "name": "文字线条",
+          "image-name": "05-TextLines.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "extended-srgb:0.22745,0.36863,0.52157,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.16863,0.27843,0.41961,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "狼头简笔画",
+          "image-name": "04-WolfPortrait.png",
+          "glass": false
+        },
+        {
+          "name": "图片框",
+          "image-name": "03-ImageFrame.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "extended-srgb:0.42745,0.57255,0.72157,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.36078,0.49020,0.64314,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      }
+    },
+    {
+      "name": "前页",
+      "lighting": "individual",
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.14
+      },
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.29
+      },
+      "layers": [
+        {
+          "name": "前页",
+          "image-name": "02-FrontPage.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:0.98824,0.99608,1.00000,1.00000",
+                  "extended-srgb:0.81569,0.90980,0.98824,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:0.84706,0.92157,0.99216,1.00000",
+                  "extended-srgb:0.53725,0.67451,0.83529,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "后页",
+      "lighting": "individual",
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.27
+      },
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "layers": [
+        {
+          "name": "后页",
+          "image-name": "01-BackPage.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:0.47451,0.71765,0.95686,1.00000",
+                  "extended-srgb:0.18824,0.49020,0.85882,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "linear-gradient": [
+                  "extended-srgb:0.34118,0.61176,0.93333,1.00000",
+                  "extended-srgb:0.14118,0.30588,0.61961,1.00000"
+                ],
+                "orientation": {
+                  "start": {
+                    "x": 0.18,
+                    "y": 0.05
+                  },
+                  "stop": {
+                    "x": 0.7,
+                    "y": 0.96
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
