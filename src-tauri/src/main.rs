@@ -132,7 +132,7 @@ fn copy_item(
         return Ok(());
     }
 
-    let Some(target) = paste::activate_target() else {
+    let Some(target) = paste::last_target() else {
         if close_quick {
             let _ = window.hide();
         }
@@ -141,7 +141,7 @@ fn copy_item(
         return Ok(());
     };
     tauri::async_runtime::spawn_blocking(move || {
-        let sent = paste::send_paste(target, sequence);
+        let sent = paste::send_paste(&app, target, sequence);
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
             if clipboard::sequence() != sequence {

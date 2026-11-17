@@ -371,7 +371,7 @@ function drawMain() {
     classes: "rail-quick", icon: "inbox", run: () => void perform("toggle_quick", {}, { refresh: false }),
   });
   quick.dataset.focusKey = "open-quick";
-  if (state.settings.shortcut) quick.append(node("kbd", "", displayShortcut(state.settings.shortcut)));
+  if (state.settings.shortcut) quick.append(shortcutBadge(state.settings.shortcut));
   const top = node("div", "sidebar-top");
   top.append(drawSearch(), nav);
   sidebar.append(top, quick);
@@ -956,6 +956,17 @@ function displayShortcut(shortcut) {
   }).join(" + ");
 }
 
+function shortcutBadge(shortcut) {
+  const name = displayShortcut(shortcut);
+  const badge = node("kbd", "shortcut-badge");
+  badge.setAttribute("aria-label", name);
+  const keys = name.split(" + ");
+  keys.forEach((key, index) => {
+    badge.append(node("span", "", index < keys.length - 1 ? key + " +" : key));
+  });
+  return badge;
+}
+
 function drawSettings() {
   const settings = state.settings;
   const view = node("div", "settings");
@@ -963,7 +974,7 @@ function drawSettings() {
   move.dataset.focusKey = "move";
   const shortcut = command("修改快捷键", showShortcut, "keyboard");
   shortcut.dataset.focusKey = "shortcut";
-  const shortcuts = settings.shortcut ? [node("kbd", "", displayShortcut(settings.shortcut)), shortcut] : [shortcut];
+  const shortcuts = settings.shortcut ? [shortcutBadge(settings.shortcut), shortcut] : [shortcut];
   view.append(
     settingRow("收藏夹位置", "收藏由当前 Windows 用户加密。可移至网盘目录同步加密文件，另一台设备仍需具备解密所需的 Windows 用户密钥。网盘空间及费用由用户管理。", "lock", move, settings.favoritesDirectory),
     settingRow("窗口材质", "应用于主窗口、快捷收纳区和通知。", "palette",
@@ -1000,7 +1011,7 @@ function drawAbout() {
   portrait.append(image, node("figcaption", "", "你认为自己是什么，那你就是什么。——摘自《狗生回忆录》"));
   about.append(
     node("h2", "", "关于"),
-    node("p", "", "剪栈 1.0.8"),
+    node("p", "", "剪栈 1.0.9"),
     node("p", "", "剪栈是一款适用于 Mac OS 和 Windows 的剪贴板管理工具。刚复制过的内容随时能找回，反复要用的资料可以加密收藏，收藏内容不会被系统搜索索引。"),
     node("p", "", "历史记录自动收录剪栈运行时复制的文字、链接、图片、富文本和文件引用。退出剪栈后仍可找回本次登录的记录，注销或关机时清空。"),
     node("p", "", "收藏夹长期保存手动收藏的内容，例如材料模板、常用单位全称、视频导出参数和二维码。收藏使用当前 Windows 用户加密。"),

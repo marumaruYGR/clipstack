@@ -154,10 +154,21 @@ button:disabled { cursor: default; opacity: .55; }
   animation: nav-indicator-in 165ms cubic-bezier(.2, .65, .3, 1) both;
 }
 @keyframes nav-indicator-in { from { opacity: .35; transform: scaleY(.65); } }
-.rail-quick { gap: 6px; padding: 0 4px; font-size: 11px; }
+.rail-quick {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 6px;
+  align-content: center;
+  justify-items: start;
+  padding: 5px 4px;
+  font-size: 11px;
+}
 .rail-quick .glyph { width: 15px; height: 15px; }
-.rail-quick kbd { margin-left: auto; }
+.rail-quick > span { white-space: nowrap; }
+.rail-quick kbd { grid-column: 2; }
 kbd { border: 1px solid var(--edge); border-radius: 2px; color: var(--muted); padding: 1px 4px; font: 11px/1.2 var(--ak-font-mono); white-space: nowrap; }
+.shortcut-badge { display: inline-flex; flex-wrap: wrap; gap: 2px .45em; min-width: 0; max-width: 100%; }
+.shortcut-badge span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 
 .workspace { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .page-head {
@@ -472,7 +483,6 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
   .record-grid, .settings { padding-inline: 16px; }
   .setting-row { grid-template-columns: 1fr; }
   .setting-control { margin-left: 26px; flex-wrap: wrap; }
-  .rail-quick kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 0ms !important; }

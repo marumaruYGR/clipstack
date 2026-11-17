@@ -1,11 +1,12 @@
 use std::{
     mem::size_of,
     ptr::null_mut,
-    sync::Mutex,
+    sync::{mpsc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
+use tauri::AppHandle;
 use windows_sys::Win32::{
     Foundation::{HWND, RECT},
     System::DataExchange::GetClipboardSequenceNumber,
@@ -18,14 +19,18 @@ use windows_sys::Win32::{
         WindowsAndMessaging::{
             GetAncestor, GetClassNameW, GetForegroundWindow, GetGUIThreadInfo, GetShellWindow,
             GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
-            SetForegroundWindow, EVENT_SYSTEM_FOREGROUND, GA_ROOT, GUITHREADINFO,
-            WINEVENT_OUTOFCONTEXT,
+            SetForegroundWindow, EVENT_SYSTEM_FOREGROUND, GA_ROOT, GUITHREADINFO, GUI_INMENUMODE,
+            GUI_POPUPMENUMODE, GUI_SYSTEMMENUMODE, WINEVENT_OUTOFCONTEXT,
         },
     },
 };
 
 pub const INPUT_TAG: usize = 0x434C4950;
 const KEY_V: u16 = b'V' as u16;
+const MODIFIER_TIMEOUT: Duration = Duration::from_millis(1500);
+const FOCUS_TIMEOUT: Duration = Duration::from_secs(1);
+const FOCUS_SETTLE: Duration = Duration::from_millis(40);
+const POLL_INTERVAL: Duration = Duration::from_millis(8);
 static LAST_EXTERNAL: Mutex<Option<Target>> = Mutex::new(None);
 
 #[derive(Clone, Copy)]
@@ -127,30 +132,24 @@ impl Drop for ForegroundHook {
     }
 }
 
-pub fn activate_target() -> Option<Target> {
+pub fn last_target() -> Option<Target> {
     let target = (*LAST_EXTERNAL.lock().unwrap())?;
     let hwnd = target.hwnd();
-    let foreground = unsafe { GetForegroundWindow() };
-    let mut foreground_process = 0;
-    unsafe { GetWindowThreadProcessId(foreground, &mut foreground_process) };
-    if !target.is_current()
-        || unsafe { IsIconic(hwnd) != 0 || IsWindowVisible(hwnd) == 0 || IsIconic(foreground) != 0 }
-        || (foreground != hwnd && foreground_process != std::process::id())
-    {
-        return None;
-    }
-    (foreground == hwnd || unsafe { SetForegroundWindow(hwnd) } != 0).then_some(target)
+    (target.is_current() && unsafe { IsIconic(hwnd) == 0 && IsWindowVisible(hwnd) != 0 })
+        .then_some(target)
 }
 
-fn focused_control(hwnd: HWND, thread: u32) -> bool {
+fn focused_control(hwnd: HWND, thread: u32) -> Option<HWND> {
     let mut gui = GUITHREADINFO {
         cbSize: size_of::<GUITHREADINFO>() as u32,
         ..Default::default()
     };
     unsafe {
-        GetGUIThreadInfo(thread, &mut gui) != 0
+        (GetGUIThreadInfo(thread, &mut gui) != 0
             && gui.hwndActive == hwnd
-            && GetAncestor(gui.hwndFocus, GA_ROOT) == hwnd
+            && gui.flags & (GUI_INMENUMODE | GUI_POPUPMENUMODE | GUI_SYSTEMMENUMODE) == 0
+            && GetAncestor(gui.hwndFocus, GA_ROOT) == hwnd)
+            .then_some(gui.hwndFocus)
     }
 }
 
@@ -161,7 +160,7 @@ pub fn external_focus() -> bool {
     thread != 0
         && process != std::process::id()
         && !is_shell_surface(hwnd)
-        && focused_control(hwnd, thread)
+        && focused_control(hwnd, thread).is_some()
 }
 
 pub fn key_down(key: u16) -> bool {
@@ -174,21 +173,66 @@ fn modifiers_released() -> bool {
         .all(|key| !key_down(key))
 }
 
-pub fn send_paste(target: Target, sequence: u32) -> bool {
-    // Foreground activation on a different GUI thread is asynchronous.
-    let deadline = Instant::now() + Duration::from_millis(250);
-    let hwnd = target.hwnd();
-    loop {
-        let foreground = unsafe { GetForegroundWindow() };
-        let mut process = 0;
-        unsafe { GetWindowThreadProcessId(foreground, &mut process) };
-        if unsafe { GetClipboardSequenceNumber() } != sequence
-            || !target.is_current()
-            || (foreground != hwnd && process != std::process::id())
-        {
+fn paste_foreground(target: Target, sequence: u32) -> Option<HWND> {
+    let foreground = unsafe { GetForegroundWindow() };
+    let mut process = 0;
+    unsafe { GetWindowThreadProcessId(foreground, &mut process) };
+    (unsafe { GetClipboardSequenceNumber() } == sequence
+        && target.is_current()
+        && (foreground == target.hwnd() || process == std::process::id()))
+    .then_some(foreground)
+}
+
+pub fn send_paste(app: &AppHandle, target: Target, sequence: u32) -> bool {
+    // A hotkey's Alt and Ctrl releases belong to the picker. Word can enter
+    // ribbon navigation when the original window receives the tail of that chord.
+    let deadline = Instant::now() + MODIFIER_TIMEOUT;
+    while !modifiers_released() {
+        if Instant::now() >= deadline || paste_foreground(target, sequence).is_none() {
             return false;
         }
-        if foreground == hwnd && focused_control(hwnd, target.thread) && modifiers_released() {
+        thread::sleep(POLL_INTERVAL);
+    }
+
+    // Request activation from the UI thread, which received the user's click.
+    let deadline = Instant::now() + FOCUS_TIMEOUT;
+    let (reply, activated) = mpsc::channel();
+    if app
+        .run_on_main_thread(move || {
+            let success = Instant::now() < deadline
+                && modifiers_released()
+                && paste_foreground(target, sequence).is_some_and(|foreground| {
+                    foreground == target.hwnd()
+                        || unsafe { SetForegroundWindow(target.hwnd()) } != 0
+                });
+            let _ = reply.send(success);
+        })
+        .is_err()
+        || !activated.recv_timeout(FOCUS_TIMEOUT).unwrap_or(false)
+    {
+        return false;
+    }
+
+    // A foreground HWND can appear before Office has restored its editing focus.
+    let mut settled_focus = None;
+    loop {
+        let Some(foreground) = paste_foreground(target, sequence) else {
+            return false;
+        };
+        let focus = (foreground == target.hwnd() && modifiers_released())
+            .then(|| focused_control(foreground, target.thread))
+            .flatten();
+        let ready = if let Some(control) = focus {
+            let (previous, since) = settled_focus.get_or_insert_with(|| (control, Instant::now()));
+            if *previous != control {
+                (*previous, *since) = (control, Instant::now());
+            }
+            since.elapsed() >= FOCUS_SETTLE
+        } else {
+            settled_focus = None;
+            false
+        };
+        if ready {
             let input = [
                 key_event(VK_CONTROL, 0),
                 key_event(KEY_V, 0),
@@ -206,7 +250,7 @@ pub fn send_paste(target: Target, sequence: u32) -> bool {
         if Instant::now() >= deadline {
             return false;
         }
-        thread::sleep(Duration::from_millis(5));
+        thread::sleep(POLL_INTERVAL);
     }
 }
 
