@@ -47,6 +47,7 @@ pub struct Settings {
     pub paste_mode: PasteMode,
     pub seen_direct_paste: bool,
     pub seen_manual_paste: bool,
+    pub seen_welcome_1_1: bool,
     pub favorites_directory: PathBuf,
 }
 
@@ -61,6 +62,7 @@ impl Default for Settings {
             paste_mode: PasteMode::Direct,
             seen_direct_paste: false,
             seen_manual_paste: false,
+            seen_welcome_1_1: false,
             favorites_directory: PathBuf::new(),
         }
     }
@@ -173,6 +175,25 @@ fn index_entries(result: Result<Vec<Entry>, String>) -> Result<Vec<Entry>, Strin
     })
 }
 
+fn merge_favorites(current: &mut Vec<Entry>, records: &[Entry]) -> usize {
+    let mut known: HashSet<_> = current.iter().map(|entry| &entry.content).collect();
+    let additions: Vec<_> = records
+        .iter()
+        .filter_map(|entry| {
+            if !known.insert(&entry.content) {
+                return None;
+            }
+            let mut imported = entry.clone();
+            imported.id = uuid::Uuid::new_v4().to_string();
+            imported.search_text = index_text(&imported.content);
+            Some(imported)
+        })
+        .collect();
+    let added = additions.len();
+    current.extend(additions);
+    added
+}
+
 fn preview(text: &str) -> String {
     let mut chars = text.chars();
     let mut result: String = chars.by_ref().take(1024).collect();
@@ -221,6 +242,13 @@ pub struct Model {
     pub preview_id: Option<String>,
     history_error: Option<String>,
     favorites_error: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct RestoreResult {
+    added: usize,
+    skipped: usize,
+    directory: Option<PathBuf>,
 }
 
 impl Model {
@@ -398,10 +426,78 @@ impl Model {
         Ok(())
     }
 
+    pub fn favorites_for_backup(&self) -> Result<Vec<Entry>, String> {
+        self.ensure_favorites_readable()?;
+        Ok(self.favorites.clone())
+    }
+
+    pub fn restore_favorites(&mut self, records: &[Entry]) -> Result<RestoreResult, String> {
+        let current = index_entries(
+            self.storage
+                .load_favorites(&self.settings.favorites_directory),
+        );
+        let needs_new_directory = current.is_err();
+        let mut merged = current.unwrap_or_else(|_| self.favorites.clone());
+        let added = merge_favorites(&mut merged, records);
+        let directory = if needs_new_directory {
+            let mut settings = self.settings.clone();
+            settings.favorites_directory = storage::default_favorites_dir()?
+                .join(format!("恢复的收藏-{}", uuid::Uuid::new_v4()));
+            self.storage.save_recovered_favorites(
+                &settings.favorites_directory,
+                &merged,
+                &settings,
+            )?;
+            let directory = settings.favorites_directory.clone();
+            self.settings = settings;
+            Some(directory)
+        } else {
+            if added != 0 {
+                self.storage
+                    .save_favorites(&self.settings.favorites_directory, &merged)?;
+            }
+            None
+        };
+        self.favorites = merged;
+        self.favorites_error = None;
+        Ok(RestoreResult {
+            added,
+            skipped: records.len() - added,
+            directory,
+        })
+    }
+
     fn ensure_favorites_readable(&self) -> Result<(), String> {
         match &self.favorites_error {
             Some(error) => Err(error.clone()),
             None => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_preserves_local_entries_and_deduplicates_content() {
+        let existing = Entry::new(Content::Text {
+            text: "已有收藏".into(),
+        });
+        let mut copied = existing.clone();
+        copied.id = uuid::Uuid::new_v4().to_string();
+        let imported = Entry::new(Content::Text {
+            text: "重装迁移".into(),
+        });
+        let records = [copied, imported.clone(), imported.clone()];
+        let mut local = vec![existing.clone()];
+
+        assert_eq!(merge_favorites(&mut local, &records), 1);
+        assert_eq!(local[0].id, existing.id);
+        assert_ne!(local[1].id, imported.id);
+        assert_eq!(local[1].created_at, imported.created_at);
+        assert_eq!(local[1].search_text, "重装迁移");
+        assert_eq!(merge_favorites(&mut local, &records), 0);
+        assert_eq!(local.len(), 2);
     }
 }

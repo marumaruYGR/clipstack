@@ -44,7 +44,7 @@ use windows_sys::Win32::{
     },
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Content {
     Text {
@@ -87,7 +87,7 @@ pub enum Content {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AccompanyingText {
     pub text: String,
     #[serde(
@@ -106,7 +106,7 @@ pub struct AccompanyingText {
     pub url: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NativeBitmap {
     version5: bool,
     #[serde(with = "bytes_base64")]

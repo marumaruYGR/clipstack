@@ -94,6 +94,23 @@ pub fn set_app_id() {
 }
 
 pub fn show_paste_mode_tip(direct: bool) -> windows::core::Result<()> {
+    let message = if direct {
+        "点选的内容会直接粘贴到原来的窗口。想自己粘贴，可在剪栈设置中切换为「手动粘贴」。"
+    } else {
+        "点选后可在目标窗口按 Ctrl+V 粘贴。想直接上屏，可在剪栈设置中切换为「直接上屏」。"
+    };
+    if direct {
+        show_system_notice("剪栈 · 直接上屏", message, "paste-direct")
+    } else {
+        show_system_notice("剪栈 · 手动粘贴", message, "paste-manual")
+    }
+}
+
+pub fn show_welcome_1_1() -> windows::core::Result<()> {
+    show_system_notice("剪栈", "庆祝剪栈迈入 1.1 版本时代！", "welcome-1.1")
+}
+
+fn show_system_notice(title: &str, message: &str, tag: &str) -> windows::core::Result<()> {
     use winreg::{enums::HKEY_CURRENT_USER, RegKey};
 
     // Register the sender even when the optional Start menu shortcut was skipped.
@@ -102,22 +119,12 @@ pub fn show_paste_mode_tip(direct: bool) -> windows::core::Result<()> {
     identity.set_value("DisplayName", &"剪栈")?;
 
     let _apartment = ComApartment::enter()?;
-    let message = if direct {
-        "点选的内容会直接粘贴到原来的窗口。想自己粘贴，可在剪栈设置中切换为「手动粘贴」。"
-    } else {
-        "点选后可在目标窗口按 Ctrl+V 粘贴。想直接上屏，可在剪栈设置中切换为「直接上屏」。"
-    };
     let xml = XmlDocument::new()?;
     xml.LoadXml(&HSTRING::from(format!(
-        "<toast><visual><binding template=\"ToastGeneric\"><text>剪栈 · {}</text><text>{message}</text></binding></visual><audio silent=\"true\"/></toast>",
-        if direct { "直接上屏" } else { "手动粘贴" },
+        "<toast><visual><binding template=\"ToastGeneric\"><text>{title}</text><text>{message}</text></binding></visual><audio silent=\"true\"/></toast>",
     )))?;
     let toast = ToastNotification::CreateToastNotification(&xml)?;
-    toast.SetTag(&HSTRING::from(if direct {
-        "paste-direct"
-    } else {
-        "paste-manual"
-    }))?;
+    toast.SetTag(&HSTRING::from(tag))?;
     ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
         "cn.siyanghuasangou.clipstack",
     ))?

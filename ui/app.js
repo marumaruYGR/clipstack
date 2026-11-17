@@ -41,6 +41,7 @@ let searchRequested = false;
 let previewId;
 let previewSequence = 0;
 let previewItem;
+let pendingFavoritesImport;
 let greeting = greetings[Math.floor(Math.random() * greetings.length)];
 let lastCopiedId = null;
 const historySelection = new Set();
@@ -890,7 +891,9 @@ function settingRow(title, description, glyph, control, path) {
   const copy = node("div");
   const heading = node("h2", "setting-title");
   heading.append(icon(glyph), title);
-  copy.append(heading, node("p", "setting-description", description));
+  const details = node("p", "setting-description");
+  details.append(description);
+  copy.append(heading, details);
   if (path) {
     const storagePath = node("p", "setting-description storage-path", path);
     storagePath.title = path;
@@ -973,11 +976,20 @@ function drawSettings() {
   const view = node("div", "settings");
   const move = command("更改位置", showMove, "folder");
   move.dataset.focusKey = "move";
+  const exportBackup = command("导出", () => void showFavoritesBackup(true));
+  exportBackup.dataset.focusKey = "export-favorites";
+  const importBackup = command("导入", () => void showFavoritesBackup(false));
+  importBackup.dataset.focusKey = "import-favorites";
+  const storageDescription = document.createDocumentFragment();
+  storageDescription.append(
+    "收藏由当前的 Windows 操作系统加密，仅支持本地解密。如欲导出（如重装系统、迁移至其他设备），请在本机使用“导出”功能导出，并在新设备上通过“导入”按钮导入。",
+    node("strong", "favorite-backup-warning", "直接复制恐将因无法解密而丢失全部数据！"),
+  );
   const shortcut = command("修改快捷键", showShortcut, "keyboard");
   shortcut.dataset.focusKey = "shortcut";
   const shortcuts = settings.shortcut ? [shortcutBadge(settings.shortcut), shortcut] : [shortcut];
   view.append(
-    settingRow("收藏夹位置", "收藏由当前 Windows 用户加密。可移至网盘目录同步加密文件，另一台设备仍需具备解密所需的 Windows 用户密钥。网盘空间及费用由用户管理。", "lock", move, settings.favoritesDirectory),
+    settingRow("收藏夹位置", storageDescription, "lock", [move, exportBackup, importBackup], settings.favoritesDirectory),
     settingRow("窗口材质", "应用于主窗口、快捷收纳区和通知。", "palette",
       segment("窗口材质", "material", [["mica", "Mica"], ["acrylic", "Acrylic"]])),
     settingRow("颜色模式", "选择浅色、深色或跟随 Windows 设置。", "palette",
@@ -1019,7 +1031,7 @@ function drawAbout() {
   portrait.append(image, node("figcaption", "", "你认为自己是什么，那你就是什么。——摘自《狗生回忆录》"));
   about.append(
     node("h2", "", "关于"),
-    node("p", "", "剪栈 1.0.10"),
+    node("p", "", "剪栈 1.1.0"),
     node("p", "", "剪栈是一款适用于 Mac OS 和 Windows 的剪贴板管理工具。刚复制过的内容随时能找回，反复要用的资料可以加密收藏，收藏内容不会被系统搜索索引。"),
     node("p", "", "历史记录自动收录剪栈运行时复制的文字、链接、图片、富文本和文件引用。退出剪栈后仍可找回本次登录的记录，注销或关机时清空。"),
     node("p", "", "收藏夹长期保存手动收藏的内容，例如材料模板、常用单位全称、视频导出参数和二维码。收藏使用当前 Windows 用户加密。"),
@@ -1152,6 +1164,76 @@ function showRestart(directory) {
   present("收藏文件已移动");
   dialogBody.append(node("p", "dialog-description", `新位置为 ${directory}。确认重启剪栈。`));
   dialogSubmit("确认重启", () => invoke("restart_app"), { refreshAfter: false, cancel: "稍后重启" });
+}
+
+async function showFavoritesBackup(saving) {
+  let path;
+  try {
+    path = await invoke("choose_favorites_backup", { export: saving });
+  } catch (error) {
+    showPageError(error);
+    return;
+  }
+  if (!path) return;
+
+  present(saving ? "导出收藏备份" : "导入收藏备份");
+  const password = backupPasswordField("backup-password");
+  dialogBody.append(
+    node("p", "dialog-description", path),
+    node("p", "dialog-description", saving
+      ? "使用至少 12 个字符的备份口令。请分别保管备份文件和口令，恢复时两者都需要。"
+      : "请输入导出时设置的备份口令，验证通过后可以确认导入。"),
+    labelField("备份口令", password), password,
+  );
+
+  const confirm = saving ? backupPasswordField("backup-password-confirmation") : null;
+  if (confirm) dialogBody.append(labelField("确认备份口令", confirm), confirm);
+  const submit = dialogSubmit(saving ? "导出加密备份" : "验证备份", async () => {
+    const secret = password.value;
+    if (confirm && secret !== confirm.value) throw new Error("两次输入的备份口令不一致。");
+    const result = await invoke(saving ? "export_favorites" : "prepare_favorites_import", { path, password: secret });
+    password.value = "";
+    if (confirm) confirm.value = "";
+    return result;
+  }, {
+    refreshAfter: false,
+    after: saving ? (count) => showBackupResult("备份已导出", `已导出 ${count} 条收藏。`, path) : showImportReview,
+  });
+  const update = () => {
+    submit.disabled = saving ? [...password.value].length < 12 || !confirm.value : !password.value;
+  };
+  password.addEventListener("input", update);
+  confirm?.addEventListener("input", update);
+  update();
+  password.focus();
+}
+
+function backupPasswordField(id) {
+  const field = node("input", "field");
+  field.id = id;
+  field.type = "password";
+  field.autocomplete = "off";
+  return field;
+}
+
+function showImportReview({ token, count }) {
+  pendingFavoritesImport = token;
+  present("确认恢复收藏");
+  dialogBody.append(node("p", "dialog-description", `备份中有 ${count} 条收藏。导入时按内容去重，并与本机收藏合并。`));
+  dialogSubmit("导入并合并", () => invoke("restore_favorites", { token }), {
+    after: ({ added, skipped, directory }) => {
+      pendingFavoritesImport = null;
+      const location = directory ? `旧文件保存在原目录。恢复后的收藏位置为 ${directory}。` : "";
+      showBackupResult("收藏已恢复", `已导入 ${added} 条收藏，跳过 ${skipped} 条重复记录。`, location);
+    },
+  });
+}
+
+function showBackupResult(title, message, path) {
+  present(title);
+  dialogBody.append(node("p", "dialog-description", message));
+  if (path) dialogBody.append(node("p", "dialog-description", path));
+  dialogActions.append(command("完成", () => dialog.close(), null, "primary"));
 }
 
 function shortcutFromKey(event) {
@@ -1392,6 +1474,12 @@ async function start() {
     if (dialogClose.disabled) event.preventDefault();
   });
   dialog.addEventListener("close", () => {
+    for (const field of dialogBody.querySelectorAll("input[type=password]")) field.value = "";
+    if (pendingFavoritesImport) {
+      const token = pendingFavoritesImport;
+      pendingFavoritesImport = null;
+      void invoke("discard_favorites_import", { token }).catch(() => {});
+    }
     const key = dialog.dataset.returnFocus;
     if (key) Array.from(mount.querySelectorAll("[data-focus-key]"))
       .find((element) => element.dataset.focusKey === key)?.focus({ preventScroll: true });

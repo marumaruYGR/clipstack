@@ -284,6 +284,7 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
 .setting-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 650; }
 .setting-title .glyph { color: var(--accent); }
 .setting-description { margin: 3px 0 0 26px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.favorite-backup-warning { color: var(--danger); }
 .storage-path { color: var(--ink); font-family: var(--ak-font-mono); user-select: text; }
 .setting-control { display: flex; align-items: center; gap: 8px; }
 .segment { display: inline-flex; border: 1px solid var(--edge); }

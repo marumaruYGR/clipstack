@@ -1,6 +1,6 @@
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
@@ -162,6 +162,25 @@ impl Storage {
         let encrypted = dpapi(&plain, None, true);
         wipe(&mut plain);
         atomic_write(&dir.join(FAVORITES_FILE), &encrypted?, true)
+    }
+
+    pub fn save_recovered_favorites<T: Serialize, S: Serialize>(
+        &self,
+        dir: &Path,
+        entries: &T,
+        settings: &S,
+    ) -> Result<(), String> {
+        let parent = dir.parent().ok_or("恢复目录缺少父目录。")?;
+        fs::create_dir_all(parent).map_err(|e| format!("无法创建恢复位置：{e}"))?;
+        fs::create_dir(dir).map_err(|e| format!("无法新建收藏恢复目录：{e}"))?;
+        let result = self
+            .save_favorites(dir, entries)
+            .and_then(|_| self.save_settings(settings));
+        if result.is_err() {
+            let _ = remove_if_present(&dir.join(FAVORITES_FILE));
+            let _ = fs::remove_dir(dir);
+        }
+        result
     }
 
     pub fn move_favorites<T: Serialize>(
@@ -465,6 +484,14 @@ fn remove_if_present(path: &Path) -> Result<(), String> {
 }
 
 fn atomic_write(path: &Path, bytes: &[u8], replace: bool) -> Result<(), String> {
+    write_atomic(path, bytes, replace, false)
+}
+
+pub(crate) fn write_backup_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    write_atomic(path, bytes, true, true)
+}
+
+fn write_atomic(path: &Path, bytes: &[u8], replace: bool, verify: bool) -> Result<(), String> {
     let dir = fs::canonicalize(path.parent().ok_or("剪栈数据路径缺少目录")?)
         .map_err(|e| format!("无法打开数据目录：{e}"))?;
     let path = dir.join(path.file_name().ok_or("剪栈数据路径缺少文件名")?);
@@ -477,6 +504,19 @@ fn atomic_write(path: &Path, bytes: &[u8], replace: bool) -> Result<(), String> 
     let result = file.write_all(bytes).and_then(|()| file.sync_all());
     drop(file);
     let result = result.and_then(|()| {
+        if verify {
+            let mut written = fs::File::open(&temporary)?;
+            let mut buffer = [0; 8192];
+            for expected in bytes.chunks(buffer.len()) {
+                written.read_exact(&mut buffer[..expected.len()])?;
+                if &buffer[..expected.len()] != expected {
+                    return Err(io::Error::other("备份文件回读校验失败"));
+                }
+            }
+            if written.read(&mut buffer)? != 0 {
+                return Err(io::Error::other("备份文件大小与写入内容不一致"));
+            }
+        }
         let source: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
         let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let flags = MOVEFILE_WRITE_THROUGH
@@ -494,4 +534,48 @@ fn atomic_write(path: &Path, bytes: &[u8], replace: bool) -> Result<(), String> 
         let _ = fs::remove_file(&temporary);
     }
     result.map_err(|e| format!("无法保存 {}：{e}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovery_writes_a_new_dpapi_store_and_keeps_the_old_file() {
+        let root = std::env::temp_dir().join(format!("clipstack-recovery-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("old")).unwrap();
+        let old = root.join("old").join(FAVORITES_FILE);
+        fs::write(&old, b"unreadable previous installation").unwrap();
+        let storage = Storage {
+            history: root.join("history.dpapi"),
+            root: root.clone(),
+            logon: 0,
+        };
+        let destination = root.join("recovered");
+        let recovered = vec!["已恢复".to_string()];
+        let settings = serde_json::json!({ "favoritesDirectory": destination });
+
+        assert!(storage
+            .load_favorites::<Vec<String>>(&root.join("old"))
+            .is_err());
+        storage
+            .save_recovered_favorites(&destination, &recovered, &settings)
+            .unwrap();
+        assert_eq!(fs::read(&old).unwrap(), b"unreadable previous installation");
+        assert_eq!(
+            storage.load_favorites::<Vec<String>>(&destination).unwrap(),
+            recovered
+        );
+        assert_eq!(
+            storage.load_settings::<serde_json::Value>().unwrap(),
+            settings
+        );
+
+        fs::remove_file(old).unwrap();
+        fs::remove_dir(root.join("old")).unwrap();
+        fs::remove_file(destination.join(FAVORITES_FILE)).unwrap();
+        fs::remove_dir(destination).unwrap();
+        fs::remove_file(storage.settings_file()).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
 }

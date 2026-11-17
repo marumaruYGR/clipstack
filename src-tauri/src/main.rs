@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
 mod clipboard;
 mod context_menu;
 mod model;
@@ -18,6 +19,7 @@ use shell::AppModel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use zeroize::Zeroizing;
 
 #[tauri::command]
 fn get_state(model: State<AppModel>, query: Option<String>) -> AppView {
@@ -318,6 +320,120 @@ fn move_favorites(
     Ok(())
 }
 
+struct PreparedImport {
+    token: String,
+    entries: Vec<model::Entry>,
+}
+
+type ImportState = Mutex<Option<PreparedImport>>;
+
+#[derive(serde::Serialize)]
+struct ImportReview {
+    token: String,
+    count: usize,
+}
+
+#[tauri::command]
+async fn choose_favorites_backup(
+    app: AppHandle,
+    window: WebviewWindow,
+    export: bool,
+) -> Option<String> {
+    let (tx, mut rx) = tauri::async_runtime::channel(1);
+    let select = move |result| {
+        let _ = tx.try_send(result);
+    };
+    let picker = app
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .add_filter("剪栈加密备份", &[backup::EXTENSION]);
+    if export {
+        picker
+            .set_title("保存收藏加密备份")
+            .set_file_name(format!("剪栈收藏备份.{}", backup::EXTENSION))
+            .save_file(select);
+    } else {
+        picker.set_title("选择收藏加密备份").pick_file(select);
+    }
+    rx.recv()
+        .await
+        .flatten()
+        .and_then(|path| path.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn export_favorites(
+    app: AppHandle,
+    path: PathBuf,
+    password: String,
+) -> Result<usize, String> {
+    let password = Zeroizing::new(password);
+    tauri::async_runtime::spawn_blocking(move || {
+        let entries = app
+            .state::<AppModel>()
+            .lock()
+            .unwrap()
+            .favorites_for_backup()?;
+        backup::export(&path, &password, &entries)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn prepare_favorites_import(
+    app: AppHandle,
+    path: PathBuf,
+    password: String,
+) -> Result<ImportReview, String> {
+    let password = Zeroizing::new(password);
+    tauri::async_runtime::spawn_blocking(move || {
+        let entries = backup::read(&path, &password)?;
+        let token = uuid::Uuid::new_v4().to_string();
+        let count = entries.len();
+        *app.state::<ImportState>().lock().unwrap() = Some(PreparedImport {
+            token: token.clone(),
+            entries,
+        });
+        Ok(ImportReview { token, count })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn restore_favorites(app: AppHandle, token: String) -> Result<model::RestoreResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ImportState>();
+        let mut pending = state.lock().unwrap();
+        let preview = pending
+            .as_ref()
+            .filter(|entry| entry.token == token)
+            .ok_or("导入预览已失效，请重新打开备份。")?;
+        let result = app
+            .state::<AppModel>()
+            .lock()
+            .unwrap()
+            .restore_favorites(&preview.entries)?;
+        *pending = None;
+        drop(pending);
+        shell::state_changed(&app);
+        Ok(result)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn discard_favorites_import(token: String, state: State<ImportState>) {
+    let mut pending = state.lock().unwrap();
+    if pending.as_ref().is_some_and(|entry| entry.token == token) {
+        *pending = None;
+    }
+}
+
 #[tauri::command]
 fn restart_app(app: AppHandle) {
     app.request_restart();
@@ -461,6 +577,7 @@ fn update_settings(
 
 fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Mutex::new(Model::open()?));
+    app.manage(ImportState::default());
     shell::setup(app)?;
     if let Err(error) = windows_integration::register_search_task() {
         eprintln!("无法注册任务栏检索：{error}");
@@ -557,6 +674,19 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             shell::show_main(app)?;
         }
     }
+    let state = app.state::<AppModel>();
+    let mut model = state.lock().unwrap();
+    if !model.settings.seen_welcome_1_1 {
+        match windows_integration::show_welcome_1_1() {
+            Ok(()) => {
+                model.settings.seen_welcome_1_1 = true;
+                if let Err(error) = model.storage.save_settings(&model.settings) {
+                    eprintln!("无法保存 1.1 首次启动状态：{error}");
+                }
+            }
+            Err(error) => eprintln!("无法发送 1.1 首次启动通知：{error}"),
+        }
+    }
     Ok(())
 }
 
@@ -611,6 +741,11 @@ fn main() {
             set_pinned,
             choose_directory,
             move_favorites,
+            choose_favorites_backup,
+            export_favorites,
+            prepare_favorites_import,
+            restore_favorites,
+            discard_favorites_import,
             restart_app,
             window_action,
             update_settings
