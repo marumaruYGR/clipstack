@@ -575,7 +575,7 @@ fn update_settings(
     Ok(())
 }
 
-fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+fn start(app: &AppHandle, open_search: bool) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Mutex::new(Model::open()?));
     app.manage(ImportState::default());
     shell::setup(app)?;
@@ -667,12 +667,8 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         },
     )?;
 
-    if !std::env::args_os().any(|arg| arg == "--autostart") {
-        if std::env::args_os().any(|arg| arg == "--search") {
-            shell::show_search(app)?;
-        } else {
-            shell::show_main(app)?;
-        }
+    if open_search {
+        shell::show_search(app)?;
     }
     let state = app.state::<AppModel>();
     let mut model = state.lock().unwrap();
@@ -696,18 +692,24 @@ fn main() {
             return;
         }
     }
-    if std::env::args_os().any(|arg| arg == "--autostart") && !shell::autostart_enabled() {
+    let mut restart_env = tauri::Env::default();
+    let args = restart_env.args_os.iter().skip(1);
+    let autostart = args.clone().any(|arg| arg == "--autostart");
+    if autostart && !shell::autostart_enabled() {
         return;
     }
+    let open_search = !autostart && args.into_iter().any(|arg| arg == "--search");
+    // A settings restart must not replay a taskbar search or installer action.
+    restart_env.args_os.truncate(1);
     windows_integration::set_app_id();
     let app = tauri::Builder::default()
+        .manage(restart_env)
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
-            if !args.iter().any(|arg| arg == "--autostart") {
-                if args.iter().any(|arg| arg == "--search") {
-                    let _ = shell::show_search(app);
-                } else {
-                    let _ = shell::show_main(app);
-                }
+            let args = args.iter().skip(1);
+            if !args.clone().any(|arg| arg == "--autostart")
+                && args.into_iter().any(|arg| arg == "--search")
+            {
+                let _ = shell::show_search(app);
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -750,7 +752,7 @@ fn main() {
             window_action,
             update_settings
         ])
-        .setup(|app| start(app.handle()));
+        .setup(move |app| start(app.handle(), open_search));
     if let Err(error) = app.run(tauri::generate_context!()) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR};
         let message: Vec<u16> = format!("剪栈启动失败。\n{error}")

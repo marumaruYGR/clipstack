@@ -41,12 +41,13 @@ pub fn configure_user_uninstall(install: bool) -> std::io::Result<()> {
         .parent()
         .ok_or_else(|| std::io::Error::other("无法确定剪栈安装目录"))?;
     let uninstall = format!("\"{}\"", dir.join("uninstall.exe").display());
+    let version = env!("CARGO_PKG_VERSION").replace('+', "fix");
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if install {
         let (key, _) = hkcu.create_subkey(UNINSTALL_KEY)?;
         for (name, value) in [
             ("DisplayName", "剪栈".to_string()),
-            ("DisplayVersion", env!("CARGO_PKG_VERSION").to_string()),
+            ("DisplayVersion", version),
             ("Publisher", "四氧化三狗".to_string()),
             ("DisplayIcon", format!("\"{}\",0", exe.display())),
             ("InstallLocation", format!("\"{}\"", dir.display())),

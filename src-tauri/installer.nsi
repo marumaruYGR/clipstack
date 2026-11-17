@@ -21,7 +21,7 @@ SetCompressor /SOLID "{{compression}}"
 
 !define PRODUCTNAME "{{product_name}}"
 !define MANUFACTURER "{{manufacturer}}"
-!define VERSION "{{version}}"
+!searchreplace VERSION "{{version}}" "+" "fix"
 !define MAINBINARYNAME "{{main_binary_name}}"
 !define BUNDLEID "{{bundle_id}}"
 !define ARCH "{{arch}}"
