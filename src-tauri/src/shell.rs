@@ -67,6 +67,9 @@ const RUN_NAME: &str = "Clipstack.Win64";
 const MACHINE_RUN_NAME: &str = "Clipstack.Win64.AllUsers";
 pub const COPY_NOTICE: &str = "复制成功，按 Ctrl+V 粘贴";
 pub const PICK_NOTICE: &str = "已选取，按 Ctrl+V 粘贴";
+pub const SENT_NOTICE: &str = "已发送粘贴";
+pub const PASTED_NOTICE: &str = "所选内容已输入";
+pub const PASTE_FALLBACK_NOTICE: &str = "已复制，请按 Ctrl+V 粘贴";
 const NOTICE_DURATION: Duration = Duration::from_secs(3);
 const NOTICE_EXIT_LEAD: Duration = Duration::from_millis(130);
 const DARK_TRAY: &[u8] = include_bytes!("../icons/tray-dark.png");
@@ -599,6 +602,7 @@ pub fn state_changed(app: &AppHandle) {
 }
 
 pub fn show_main(app: &AppHandle) -> Result<(), String> {
+    crate::paste::remember_foreground();
     let main = get_window(app, "main")?;
     if let Some(quick) = app.get_webview_window("quick") {
         if !app.state::<AppModel>().lock().unwrap().pinned {
@@ -623,11 +627,21 @@ pub fn show_search(app: &AppHandle) -> Result<(), String> {
 
 pub fn show_preview(app: &AppHandle, id: &str) -> Result<(), String> {
     let preview = get_window(app, "preview")?;
-    if let Some(monitor) = app
-        .cursor_position()
-        .ok()
-        .and_then(|point| monitor_at(app, point))
-    {
+    let main_center = app.get_webview_window("main").and_then(|main| {
+        if !main.is_visible().ok()? || main.is_minimized().ok()? {
+            return None;
+        }
+        let position = main.outer_position().ok()?;
+        let size = main.outer_size().ok()?;
+        Some(PhysicalPosition::new(
+            f64::from(position.x) + f64::from(size.width) / 2.0,
+            f64::from(position.y) + f64::from(size.height) / 2.0,
+        ))
+    });
+    let point = main_center
+        .or_else(|| app.cursor_position().ok())
+        .unwrap_or_default();
+    if let Some(monitor) = monitor_at(app, point) {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
         let width = (744.0 * scale)
@@ -636,10 +650,16 @@ pub fn show_preview(app: &AppHandle, id: &str) -> Result<(), String> {
         let height = (540.0 * scale)
             .round()
             .min(f64::from(area.size.height.saturating_sub(16))) as u32;
+        let center = main_center.unwrap_or_else(|| {
+            PhysicalPosition::new(
+                f64::from(area.position.x) + f64::from(area.size.width) / 2.0,
+                f64::from(area.position.y) + f64::from(area.size.height) / 2.0,
+            )
+        });
         let _ = preview.set_size(PhysicalSize::new(width.max(1), height.max(1)));
         let _ = preview.set_position(PhysicalPosition::new(
-            area.position.x + ((area.size.width - width) / 2) as i32,
-            area.position.y + ((area.size.height - height) / 2) as i32,
+            (center.x - f64::from(width) / 2.0).round() as i32,
+            (center.y - f64::from(height) / 2.0).round() as i32,
         ));
     }
     let _ = preview.emit("preview-opened", id);
@@ -656,6 +676,7 @@ fn get_window(app: &AppHandle, label: &str) -> Result<WebviewWindow, String> {
 }
 
 pub fn toggle_quick(app: &AppHandle, rect: Option<Rect>) -> Result<(), String> {
+    crate::paste::remember_foreground();
     let quick = get_window(app, "quick")?;
     if quick.is_visible().unwrap_or_default() {
         if app.state::<AppModel>().lock().unwrap().pinned {
@@ -718,10 +739,23 @@ fn monitor_at(app: &AppHandle, point: PhysicalPosition<f64>) -> Option<Monitor> 
 }
 
 pub fn show_notice(app: &AppHandle, message: &'static str) {
+    show_notice_at(app, message, None);
+}
+
+pub fn sync_paste_watch(app: &AppHandle) {
+    let state = app.state::<AppModel>();
+    let model = state.lock().unwrap();
+    clipboard::set_paste_watch(
+        model.pending_manual_paste.is_some()
+            || matches!(model.notice, Some(COPY_NOTICE | PICK_NOTICE | PASTE_FALLBACK_NOTICE)),
+    );
+}
+
+pub fn show_notice_at(app: &AppHandle, message: &'static str, position: Option<(f64, f64)>) {
     let Some(toast) = app.get_webview_window("toast") else {
         return;
     };
-    let generation = {
+    let (generation, watch_paste) = {
         let state = app.state::<AppModel>();
         let mut model = state.lock().unwrap();
         if !model.settings.notifications {
@@ -729,9 +763,14 @@ pub fn show_notice(app: &AppHandle, message: &'static str) {
         }
         model.notice_generation = model.notice_generation.wrapping_add(1);
         model.notice = Some(message);
-        model.notice_generation
+        let watch_paste = matches!(message, COPY_NOTICE | PICK_NOTICE | PASTE_FALLBACK_NOTICE)
+            || model.pending_manual_paste.is_some();
+        (model.notice_generation, watch_paste)
     };
-    let point = app.cursor_position().unwrap_or_default();
+    let point = position
+        .map(|(x, y)| PhysicalPosition::new(x, y))
+        .or_else(|| app.cursor_position().ok())
+        .unwrap_or_default();
     if let Some(monitor) = monitor_at(app, point) {
         let area = monitor.work_area();
         let dpi = monitor.scale_factor();
@@ -745,20 +784,21 @@ pub fn show_notice(app: &AppHandle, message: &'static str) {
     let _ = toast.emit("clipboard-notice", message);
     round_panel(&toast);
     let _ = toast.show();
-    clipboard::set_paste_watch(true);
+    clipboard::set_paste_watch(watch_paste);
     let _ = app.state::<NoticeTimer>().0.send(generation);
 }
 
 pub fn hide_notice(app: &AppHandle, generation: Option<u64>) {
-    {
+    let keep_watching = {
         let state = app.state::<AppModel>();
         let mut model = state.lock().unwrap();
         if generation.is_some_and(|generation| generation != model.notice_generation) {
             return;
         }
         model.notice = None;
-    }
-    clipboard::set_paste_watch(false);
+        model.pending_manual_paste.is_some()
+    };
+    clipboard::set_paste_watch(keep_watching);
     if let Some(toast) = app.get_webview_window("toast") {
         let _ = toast.hide();
     }

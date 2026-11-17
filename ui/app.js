@@ -477,9 +477,9 @@ function drawSearchResults() {
   return results;
 }
 
-async function copyItem(id) {
+async function copyItem(id, fromFavorites = false) {
   try {
-    await invoke("copy_item", { id });
+    await invoke("copy_item", { id, fromFavorites });
     lastCopiedId = id;
     transientError = "";
     render();
@@ -684,13 +684,14 @@ function drawRecord(item, fromFavorites) {
   const focusId = fromFavorites ? `favorite-${item.id}` : item.id;
   const pick = node("button", "record-pick");
   pick.type = "button";
-  pick.title = fromFavorites ? "复制到系统剪贴板" : "复制到系统剪贴板（Ctrl+单击多选，Shift+单击选择范围）";
-  pick.setAttribute("aria-label", `复制 ${itemTitle(item).slice(0, 100)}`);
+  const action = !fromFavorites && state.settings.pasteMode === "direct" ? "直接上屏" : "复制到系统剪贴板";
+  pick.title = fromFavorites ? action : `${action}（Ctrl+单击多选，Shift+单击选择范围）`;
+  pick.setAttribute("aria-label", `${action} ${itemTitle(item).slice(0, 100)}`);
   pick.dataset.focusKey = `copy-${focusId}`;
   pick.dataset.previewId = item.id;
   pick.addEventListener("click", () => {
     if (!fromFavorites) historyAnchor = item.id;
-    void copyItem(item.id);
+    void copyItem(item.id, fromFavorites);
   });
   if (fromFavorites) {
     card.dataset.selected = String(lastCopiedId === item.id);
@@ -858,7 +859,7 @@ function drawQuickRecord(item) {
   const row = node("div", "quick-row");
   const record = node("button", "quick-copy");
   record.type = "button";
-  record.title = "复制到系统剪贴板";
+  record.title = state.settings.pasteMode === "direct" ? "直接上屏" : "复制到系统剪贴板";
   record.dataset.selected = String(lastCopiedId === item.id);
   record.dataset.focusKey = `copy-${item.id}`;
   record.dataset.previewId = item.id;
@@ -971,7 +972,9 @@ function drawSettings() {
       segment("颜色模式", "theme", [["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]])),
     settingRow("开机自启动", "登录 Windows 后在托盘静默运行。", "power", settingSwitch("开机自启动", "autostart")),
     settingRow("系统快捷键", state.shortcutError || (settings.shortcut ? "打开或收起快捷收纳区。" : "未注册系统快捷键。"), "keyboard", shortcuts),
-    settingRow("显示复制和选取成功提示", "复制或选取后显示 3 秒，按 Ctrl+V 立即收起。", "bell", settingSwitch("显示复制和选取成功提示", "notifications")),
+    settingRow("点选粘贴方式", "控制快捷收纳区和剪贴板中点选记录的行为。直接上屏会粘贴到原窗口，手动粘贴需回到目标窗口按 Ctrl+V。", "keyboard",
+      segment("点选粘贴方式", "pasteMode", [["direct", "直接上屏"], ["manual", "手动粘贴"]])),
+    settingRow("显示复制和粘贴提示", "在屏幕下方显示复制、选取和粘贴提示，约 3 秒后收起。", "bell", settingSwitch("显示复制和粘贴提示", "notifications")),
     drawAbout(),
   );
   return view;
@@ -997,7 +1000,7 @@ function drawAbout() {
   portrait.append(image, node("figcaption", "", "你认为自己是什么，那你就是什么。——摘自《狗生回忆录》"));
   about.append(
     node("h2", "", "关于"),
-    node("p", "", "剪栈 1.0.7"),
+    node("p", "", "剪栈 1.0.8"),
     node("p", "", "剪栈是一款适用于 Mac OS 和 Windows 的剪贴板管理工具。刚复制过的内容随时能找回，反复要用的资料可以加密收藏，收藏内容不会被系统搜索索引。"),
     node("p", "", "历史记录自动收录剪栈运行时复制的文字、链接、图片、富文本和文件引用。退出剪栈后仍可找回本次登录的记录，注销或关机时清空。"),
     node("p", "", "收藏夹长期保存手动收藏的内容，例如材料模板、常用单位全称、视频导出参数和二维码。收藏使用当前 Windows 用户加密。"),

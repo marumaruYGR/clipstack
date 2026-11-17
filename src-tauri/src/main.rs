@@ -3,6 +3,7 @@
 mod clipboard;
 mod context_menu;
 mod model;
+mod paste;
 mod preview;
 mod shell;
 mod storage;
@@ -12,7 +13,7 @@ use std::{path::PathBuf, sync::Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use clipboard::Content;
-use model::{AppView, Model, SettingsPatch};
+use model::{AppView, Model, PasteMode, SettingsPatch};
 use shell::AppModel;
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
@@ -100,15 +101,88 @@ fn copy_item(
     app: AppHandle,
     window: WebviewWindow,
     id: String,
+    from_favorites: bool,
     model: State<AppModel>,
 ) -> Result<(), String> {
-    let content = model.lock().unwrap().get(&id)?.content.clone();
-    clipboard::write(&content)?;
-    if window.label() == "quick" && !model.lock().unwrap().pinned {
-        let _ = window.hide();
+    let (content, mode, pinned) = {
+        let state = model.lock().unwrap();
+        (
+            state.get(&id)?.content.clone(),
+            state.settings.paste_mode,
+            state.pinned,
+        )
+    };
+    let sequence = clipboard::write(&content)?;
+    let close_quick = window.label() == "quick" && !pinned;
+    {
+        let mut state = model.lock().unwrap();
+        state.pending_manual_paste =
+            (!from_favorites && mode == PasteMode::Manual && state.settings.notifications)
+                .then_some(sequence);
     }
-    shell::show_notice(&app, shell::PICK_NOTICE);
+
+    if from_favorites || mode == PasteMode::Manual {
+        if close_quick {
+            let _ = window.hide();
+        }
+        shell::show_notice(&app, shell::PICK_NOTICE);
+        if !from_favorites {
+            show_first_paste_tip(&app, mode);
+        }
+        return Ok(());
+    }
+
+    let Some(target) = paste::activate_target() else {
+        if close_quick {
+            let _ = window.hide();
+        }
+        shell::show_notice(&app, shell::PASTE_FALLBACK_NOTICE);
+        show_first_paste_tip(&app, mode);
+        return Ok(());
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let sent = paste::send_paste(target, sequence);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if clipboard::sequence() != sequence {
+                return;
+            }
+            if close_quick && !handle.state::<AppModel>().lock().unwrap().pinned {
+                let _ = window.hide();
+            }
+            let (notice, position) = if sent {
+                (shell::SENT_NOTICE, target.center())
+            } else {
+                (shell::PASTE_FALLBACK_NOTICE, None)
+            };
+            shell::show_notice_at(&handle, notice, position);
+            show_first_paste_tip(&handle, mode);
+        });
+    });
     Ok(())
+}
+
+fn show_first_paste_tip(app: &AppHandle, mode: PasteMode) {
+    let state = app.state::<AppModel>();
+    let mut model = state.lock().unwrap();
+    let seen = match mode {
+        PasteMode::Direct => model.settings.seen_direct_paste,
+        PasteMode::Manual => model.settings.seen_manual_paste,
+    };
+    if seen {
+        return;
+    }
+    if let Err(error) = windows_integration::show_paste_mode_tip(mode == PasteMode::Direct) {
+        eprintln!("无法发送粘贴方式系统通知：{error}");
+        return;
+    }
+    match mode {
+        PasteMode::Direct => model.settings.seen_direct_paste = true,
+        PasteMode::Manual => model.settings.seen_manual_paste = true,
+    }
+    if let Err(error) = model.storage.save_settings(&model.settings) {
+        eprintln!("无法保存粘贴方式提示状态：{error}");
+    }
 }
 
 #[tauri::command]
@@ -118,7 +192,11 @@ fn add_content(app: AppHandle, text: String, model: State<AppModel>) -> Result<(
     }
     let content = Content::Text { text };
     clipboard::write(&content)?;
-    let result = model.lock().unwrap().add(content);
+    let mut model = model.lock().unwrap();
+    model.pending_manual_paste = None;
+    let result = model.add(content);
+    drop(model);
+    shell::sync_paste_watch(&app);
     shell::state_changed(&app);
     result
 }
@@ -285,6 +363,9 @@ fn update_settings(
     if let Some(value) = patch.notifications {
         next.notifications = value;
     }
+    if let Some(value) = patch.paste_mode {
+        next.paste_mode = value;
+    }
     let update_shortcut = patch.shortcut.is_some();
     if let Some(value) = patch.shortcut {
         next.shortcut = value;
@@ -335,6 +416,9 @@ fn update_settings(
     {
         let mut model = state.lock().unwrap();
         model.settings = next.clone();
+        if old.paste_mode != next.paste_mode || !next.notifications {
+            model.pending_manual_paste = None;
+        }
         model.registered = desired;
         if update_shortcut {
             model.shortcut_error = None;
@@ -342,6 +426,8 @@ fn update_settings(
     }
     if !next.notifications {
         shell::hide_notice(&app, None);
+    } else if old.paste_mode != next.paste_mode {
+        shell::sync_paste_watch(&app);
     }
     if old.theme != next.theme || old.material != next.material {
         shell::apply_appearance(&app, &next);
@@ -387,21 +473,47 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     clipboard::start(
         move |content| {
             let handle = changed.clone();
-            if changed
-                .state::<AppModel>()
-                .lock()
-                .unwrap()
-                .add(content)
-                .is_ok()
-            {
+            let added = {
+                let state = changed.state::<AppModel>();
+                let mut model = state.lock().unwrap();
+                if model.pending_manual_paste != Some(clipboard::sequence()) {
+                    model.pending_manual_paste = None;
+                }
+                model.add(content).is_ok()
+            };
+            if added {
                 let _ = changed
                     .run_on_main_thread(move || shell::show_notice(&handle, shell::COPY_NOTICE));
             }
             shell::state_changed(&changed);
         },
-        move || {
+        move |sequence, external_focus| {
             let handle = pasted.clone();
-            let _ = pasted.run_on_main_thread(move || shell::hide_notice(&handle, None));
+            let _ = pasted.run_on_main_thread(move || {
+                let (show_confirmation, dismiss) = {
+                    let state = handle.state::<AppModel>();
+                    let mut model = state.lock().unwrap();
+                    if model.pending_manual_paste != Some(clipboard::sequence()) {
+                        model.pending_manual_paste = None;
+                    }
+                    let matches = external_focus && model.pending_manual_paste == Some(sequence);
+                    if matches {
+                        model.pending_manual_paste = None;
+                    }
+                    let dismiss = matches!(
+                        model.notice,
+                        Some(shell::COPY_NOTICE | shell::PICK_NOTICE | shell::PASTE_FALLBACK_NOTICE)
+                    );
+                    (matches, dismiss)
+                };
+                if show_confirmation {
+                    shell::show_notice(&handle, shell::PASTED_NOTICE);
+                } else if dismiss {
+                    shell::hide_notice(&handle, None);
+                } else {
+                    shell::sync_paste_watch(&handle);
+                }
+            });
         },
         move || {
             let _ = session

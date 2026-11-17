@@ -28,6 +28,14 @@ pub enum ColorTheme {
     Dark,
 }
 
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PasteMode {
+    #[default]
+    Direct,
+    Manual,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
@@ -36,6 +44,9 @@ pub struct Settings {
     pub autostart: bool,
     pub shortcut: Option<String>,
     pub notifications: bool,
+    pub paste_mode: PasteMode,
+    pub seen_direct_paste: bool,
+    pub seen_manual_paste: bool,
     pub favorites_directory: PathBuf,
 }
 
@@ -47,6 +58,9 @@ impl Default for Settings {
             autostart: true,
             shortcut: Some("Alt+V".into()),
             notifications: true,
+            paste_mode: PasteMode::Direct,
+            seen_direct_paste: false,
+            seen_manual_paste: false,
             favorites_directory: PathBuf::new(),
         }
     }
@@ -61,6 +75,7 @@ pub struct SettingsPatch {
     #[serde(deserialize_with = "present_shortcut")]
     pub shortcut: Option<Option<String>>,
     pub notifications: Option<bool>,
+    pub paste_mode: Option<PasteMode>,
 }
 
 fn present_shortcut<'de, D: serde::Deserializer<'de>>(
@@ -199,6 +214,7 @@ pub struct Model {
     pub pinned: bool,
     pub notice: Option<&'static str>,
     pub notice_generation: u64,
+    pub pending_manual_paste: Option<u32>,
     pub registered: Option<Shortcut>,
     pub shortcut_error: Option<String>,
     pub native_backdrop: bool,
@@ -222,6 +238,7 @@ impl Model {
             pinned: false,
             notice: None,
             notice_generation: 0,
+            pending_manual_paste: None,
             registered: None,
             shortcut_error: None,
             native_backdrop: true,

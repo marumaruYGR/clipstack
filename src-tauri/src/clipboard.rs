@@ -32,13 +32,14 @@ use windows_sys::Win32::{
         Ole::{CF_DIB, CF_DIBV5, CF_HDROP, CF_UNICODETEXT, DROPEFFECT_COPY},
     },
     UI::{
-        Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN},
+        Input::KeyboardAndMouse::{VK_CONTROL, VK_INSERT, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT},
         Shell::{DragQueryFileW, DROPFILES},
         WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-            KillTimer, PostMessageW, PostQuitMessage, RegisterClassW, SetTimer, UnregisterClassW,
-            MSG, WM_APP, WM_CLIPBOARDUPDATE, WM_DESTROY, WM_ENDSESSION, WM_QUERYENDSESSION,
-            WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+            CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+            GetMessageW, KillTimer, PostMessageW, PostQuitMessage, RegisterClassW, SetTimer,
+            SetWindowsHookExW, UnhookWindowsHookEx, UnregisterClassW, HHOOK, KBDLLHOOKSTRUCT, MSG,
+            WH_KEYBOARD_LL, WM_APP, WM_CLIPBOARDUPDATE, WM_DESTROY, WM_ENDSESSION, WM_KEYDOWN,
+            WM_QUERYENDSESSION, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
         },
     },
 };
@@ -178,7 +179,7 @@ mod bytes_base64 {
 }
 
 const WM_WATCH_PASTE: u32 = WM_APP + 1;
-const PASTE_TIMER: usize = 1;
+const WM_PASTE_CHORD: u32 = WM_APP + 2;
 const READ_TIMER: usize = 2;
 const READ_RETRIES: u8 = 12;
 static LISTENER: AtomicPtr<c_void> = AtomicPtr::new(null_mut());
@@ -207,7 +208,7 @@ thread_local! {
 
 pub fn start(
     on_change: impl Fn(Content) + Send + 'static,
-    on_paste: impl Fn() + Send + 'static,
+    on_paste: impl Fn(u32, bool) + Send + 'static,
     on_session_end: impl Fn() + Send + 'static,
 ) -> Result<(), String> {
     let (ready, result) = mpsc::sync_channel(0);
@@ -221,6 +222,7 @@ pub fn start(
                     return;
                 }
             };
+            let _foreground_hook = crate::paste::ForegroundHook::install();
             SESSION_END.with(|slot| *slot.borrow_mut() = Some(Rc::new(on_session_end)));
             LISTENER.store(window.hwnd, Ordering::Release);
             if ready.send(Ok(())).is_ok() {
@@ -333,29 +335,29 @@ unsafe extern "system" fn window_proc(
     }
 }
 
-fn run_listener(hwnd: HWND, on_change: impl Fn(Content), on_paste: impl Fn()) {
+fn run_listener(hwnd: HWND, on_change: impl Fn(Content), on_paste: impl Fn(u32, bool)) {
     let formats = RegisteredFormats::register();
     let mut last_sequence = None;
     let mut read_retries = 0;
-    let mut watching_paste = false;
+    let mut paste_hook: HHOOK = null_mut();
     let mut message = MSG::default();
     while unsafe { GetMessageW(&mut message, null_mut(), 0, 0) } > 0 {
         match (message.message, message.wParam) {
-            (WM_WATCH_PASTE, active) => {
-                watching_paste = active != 0;
-                if watching_paste {
-                    unsafe { SetTimer(hwnd, PASTE_TIMER, 10, None) };
-                } else {
-                    unsafe { KillTimer(hwnd, PASTE_TIMER) };
-                }
+            (WM_WATCH_PASTE, 1) if paste_hook.is_null() => {
+                paste_hook = unsafe {
+                    SetWindowsHookExW(
+                        WH_KEYBOARD_LL,
+                        Some(paste_key_proc),
+                        GetModuleHandleW(null()),
+                        0,
+                    )
+                };
             }
-            (WM_TIMER, PASTE_TIMER) => {
-                if watching_paste && paste_chord_down() {
-                    watching_paste = false;
-                    unsafe { KillTimer(hwnd, PASTE_TIMER) };
-                    on_paste();
-                }
+            (WM_WATCH_PASTE, 0) if !paste_hook.is_null() => {
+                unsafe { UnhookWindowsHookEx(paste_hook) };
+                paste_hook = null_mut();
             }
+            (WM_PASTE_CHORD, sequence) => on_paste(sequence as u32, message.lParam != 0),
             (WM_CLIPBOARDUPDATE, _) | (WM_TIMER, READ_TIMER) => {
                 if message.message == WM_CLIPBOARDUPDATE {
                     read_retries = READ_RETRIES;
@@ -382,11 +384,39 @@ fn run_listener(hwnd: HWND, on_change: impl Fn(Content), on_paste: impl Fn()) {
             },
         }
     }
+    if !paste_hook.is_null() {
+        unsafe { UnhookWindowsHookEx(paste_hook) };
+    }
 }
 
-fn paste_chord_down() -> bool {
-    let down = |key: u16| unsafe { GetAsyncKeyState(i32::from(key)) < 0 };
-    down(VK_CONTROL) && down(u16::from(b'V')) && !down(VK_MENU) && !down(VK_LWIN) && !down(VK_RWIN)
+unsafe extern "system" fn paste_key_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    use crate::paste::{external_focus, key_down, INPUT_TAG};
+    let forwarded = unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+    if forwarded == 0 && code >= 0 && wparam == WM_KEYDOWN as usize {
+        let input = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
+        let paste =
+            (input.vkCode == u32::from(b'V') && key_down(VK_CONTROL) && !key_down(VK_SHIFT))
+                || (input.vkCode == u32::from(VK_INSERT)
+                    && key_down(VK_SHIFT)
+                    && !key_down(VK_CONTROL));
+        if input.dwExtraInfo != INPUT_TAG
+            && paste
+            && !key_down(VK_MENU)
+            && !key_down(VK_LWIN)
+            && !key_down(VK_RWIN)
+        {
+            let hwnd = LISTENER.load(Ordering::Acquire);
+            unsafe {
+                PostMessageW(
+                    hwnd,
+                    WM_PASTE_CHORD,
+                    GetClipboardSequenceNumber() as usize,
+                    isize::from(external_focus()),
+                );
+            }
+        }
+    }
+    forwarded
 }
 
 struct OpenGuard;
@@ -641,7 +671,11 @@ fn decode_image(mut decoder: impl ImageDecoder) -> Option<image::RgbaImage> {
     Some(DynamicImage::from_decoder(decoder).ok()?.into_rgba8())
 }
 
-pub fn write(content: &Content) -> Result<(), String> {
+pub fn sequence() -> u32 {
+    unsafe { GetClipboardSequenceNumber() }
+}
+
+pub fn write(content: &Content) -> Result<u32, String> {
     let hwnd = LISTENER.load(Ordering::Acquire);
     if hwnd.is_null() {
         return Err("剪贴板监听尚未启动".into());
@@ -660,7 +694,7 @@ pub fn write(content: &Content) -> Result<(), String> {
         thread::sleep(Duration::from_millis(5));
         clipboard = OpenGuard::open(hwnd);
     }
-    let _clipboard = clipboard.ok_or_else(|| "系统剪贴板正忙，请重试".to_string())?;
+    let clipboard = clipboard.ok_or_else(|| "系统剪贴板正忙，请重试".to_string())?;
     if unsafe { EmptyClipboard() } == 0 {
         return Err(win_error("无法清空系统剪贴板以写入内容"));
     }
@@ -672,7 +706,14 @@ pub fn write(content: &Content) -> Result<(), String> {
     if failed {
         return Err("无法写入一个或多个剪贴板格式，请重试".into());
     }
-    Ok(())
+    // Windows can synthesize text formats when the clipboard is closed.
+    // The paste guard needs the sequence of the committed clipboard contents.
+    drop(clipboard);
+    let committed = sequence();
+    if unsafe { GetClipboardOwner() } != hwnd {
+        return Err("系统剪贴板内容已被其他程序更改，请重试".into());
+    }
+    Ok(committed)
 }
 
 fn write_formats(
@@ -801,9 +842,30 @@ fn add_unicode(
     if text.contains('\0') {
         return Err("文本含有剪贴板无法保存的空字符".into());
     }
-    let bytes: Vec<u8> = wide(text).into_iter().flat_map(u16::to_le_bytes).collect();
+    let bytes = if format == u32::from(CF_UNICODETEXT) {
+        clipboard_text_bytes(text)
+    } else {
+        wide(text).into_iter().flat_map(u16::to_le_bytes).collect()
+    };
     formats.push((format, GlobalData::new(&bytes)?));
     Ok(())
+}
+
+fn clipboard_text_bytes(text: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut units = text.encode_utf16().peekable();
+    while let Some(unit) = units.next() {
+        if unit == u16::from(b'\r') || unit == u16::from(b'\n') {
+            if unit == u16::from(b'\r') && units.peek() == Some(&u16::from(b'\n')) {
+                units.next();
+            }
+            bytes.extend_from_slice(&[b'\r', 0, b'\n', 0]);
+        } else {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[0, 0]);
+    bytes
 }
 
 fn required_format(name: &str) -> Result<u32, String> {
@@ -935,6 +997,18 @@ fn win_error(context: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipboard_text_preserves_unicode_and_uses_windows_line_endings() {
+        let expected: Vec<_> = wide("剪栈📋\r\n第二行\r\nThird\tline\r\n第四行")
+            .into_iter()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        assert_eq!(
+            clipboard_text_bytes("剪栈📋\n第二行\r\nThird\tline\r第四行"),
+            expected
+        );
+    }
 
     #[test]
     fn html_fragment_uses_byte_offsets_and_supports_marker_fallback() {
