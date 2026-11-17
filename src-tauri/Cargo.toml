@@ -1,6 +1,6 @@
 [package]
 name = "clipstack"
-version = "1.0.9"
+version = "1.0.10"
 description = "剪栈 · Windows 剪贴板历史"
 edition = "2021"
 

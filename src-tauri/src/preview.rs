@@ -22,6 +22,7 @@ const MAX_TEXT: usize = 1024 * 1024;
 const MAX_IMAGE: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE: u64 = 32 * 1024 * 1024;
 const TEXT_TRUNCATED: &str = "\n\n…预览已截断";
+pub const MANUAL_ID: &str = "clipstack:user-guide";
 
 #[derive(Serialize)]
 pub struct Preview {
@@ -73,6 +74,13 @@ impl Preview {
             text: Some(message.into()),
             ..Self::new("file", title)
         }
+    }
+}
+
+pub fn manual() -> Preview {
+    Preview {
+        text: Some(include_str!("../../ui/manual/guide.md").into()),
+        ..Preview::new("markdown", "使用手册")
     }
 }
 

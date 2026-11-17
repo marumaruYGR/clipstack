@@ -56,7 +56,9 @@ fn read_text(id: String, model: State<AppModel>) -> Result<String, String> {
 fn open_preview(app: AppHandle, id: String, model: State<AppModel>) -> Result<(), String> {
     {
         let mut state = model.lock().unwrap();
-        state.get(&id)?;
+        if id != preview::MANUAL_ID {
+            state.get(&id)?;
+        }
         state.preview_id = Some(id.clone());
     }
     shell::show_preview(&app, &id)
@@ -73,12 +75,37 @@ async fn read_preview(
     index: Option<usize>,
     model: State<'_, AppModel>,
 ) -> Result<preview::Preview, String> {
+    if id == preview::MANUAL_ID {
+        return Ok(preview::manual());
+    }
     let content = model.lock().unwrap().get(&id)?.content.clone();
     tauri::async_runtime::spawn_blocking(move || {
         preview::preview(&content, index.unwrap_or_default())
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn open_release_page() -> Result<(), String> {
+    use std::ptr::{null, null_mut};
+    use windows::core::w;
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+
+    let status = unsafe {
+        ShellExecuteW(
+            null_mut(),
+            w!("open").as_ptr(),
+            w!("https://github.com/marumaruYGR/clipstack/releases").as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if status as isize <= 32 {
+        return Err("无法打开剪栈发布页。".into());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -101,7 +128,6 @@ fn copy_item(
     app: AppHandle,
     window: WebviewWindow,
     id: String,
-    from_favorites: bool,
     model: State<AppModel>,
 ) -> Result<(), String> {
     let (content, mode, pinned) = {
@@ -117,18 +143,15 @@ fn copy_item(
     {
         let mut state = model.lock().unwrap();
         state.pending_manual_paste =
-            (!from_favorites && mode == PasteMode::Manual && state.settings.notifications)
-                .then_some(sequence);
+            (mode == PasteMode::Manual && state.settings.notifications).then_some(sequence);
     }
 
-    if from_favorites || mode == PasteMode::Manual {
+    if mode == PasteMode::Manual {
         if close_quick {
             let _ = window.hide();
         }
         shell::show_notice(&app, shell::PICK_NOTICE);
-        if !from_favorites {
-            show_first_paste_tip(&app, mode);
-        }
+        show_first_paste_tip(&app, mode);
         return Ok(());
     }
 
@@ -502,7 +525,9 @@ fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let dismiss = matches!(
                         model.notice,
-                        Some(shell::COPY_NOTICE | shell::PICK_NOTICE | shell::PASTE_FALLBACK_NOTICE)
+                        Some(
+                            shell::COPY_NOTICE | shell::PICK_NOTICE | shell::PASTE_FALLBACK_NOTICE
+                        )
                     );
                     (matches, dismiss)
                 };
@@ -572,6 +597,7 @@ fn main() {
             open_preview,
             get_preview,
             read_preview,
+            open_release_page,
             locate_file,
             copy_item,
             add_content,
