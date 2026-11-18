@@ -434,6 +434,7 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
 .dialog-head h2 { font-size: 18px; font-weight: 650; }
 .dialog-head .icon-button { margin-right: -5px; }
 .dialog-description { color: var(--muted); font-size: 13px; margin: 3px 0 8px; }
+.dialog-note { font-size: 12px; }
 .dialog-label { display: block; color: var(--ink); margin: 9px 0 4px; font-size: 12px; }
 .app-dialog .field {
   width: 100%; min-width: 0; min-height: 40px; padding: 8px 9px;
@@ -463,12 +464,19 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
 .preview-header p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
 .preview-content { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .preview-content .text-preview-content { max-height: none; min-height: 100%; }
-.preview-image { display: grid; align-content: safe center; justify-items: center; padding: 38px 45px; }
+.preview-image {
+  display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center;
+  padding: clamp(16px, 6vh, 38px) clamp(16px, 6vw, 45px);
+  container-type: size; overflow: clip;
+}
 .preview-album.ak-media--album {
   width: min(440px, 100%); border: 0; padding: 0; background: transparent; --ak-media-sheet-frame: var(--paper);
   --ak-media-front-duration: 620ms; --ak-media-front-delay: 85ms; --ak-media-back-duration: 700ms;
 }
-.preview-album .ak-media__sheet img { width: 100%; max-height: 48vh; object-fit: contain; background: #26353d; }
+.preview-album .ak-media__sheet img {
+  width: 100%; max-height: 48vh; max-height: min(48vh, max(1px, calc(100cqh - 48px)));
+  object-fit: contain; background: #26353d;
+}
 .preview-album .ak-media__sheet--back img { filter: grayscale(1); }
 .preview-rich { min-height: 100%; padding: 13px; overflow-wrap: anywhere; background: var(--media); border: 1px solid var(--line); user-select: text; }
 .manual-document {
@@ -483,6 +491,7 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
 .manual-document h1 { font-size: 26px; line-height: 1.2; }
 .manual-document h2 { margin-top: 22px; font-size: 20px; line-height: 1.3; }
 .manual-document h3 { margin-top: 18px; font-size: 16px; }
+.manual-document h4 { font-size: 14px; font-weight: 650; }
 .manual-document :is(ol, ul) { padding-inline-start: 1.65em; }
 .manual-document li + li { margin-top: 6px; }
 .manual-document code { padding: 1px 4px; border: 1px solid var(--line); font-family: var(--ak-font-mono); }

@@ -56,7 +56,7 @@ function renderManual(markdown, openReleasePage) {
 
   for (const block of markdown.trim().split(/\r?\n[ \t]*\r?\n/u)) {
     const lines = block.trim().split(/\r?\n/u);
-    const heading = /^(#{1,3}) (.+)$/u.exec(lines[0]);
+    const heading = /^(#{1,6}) (.+)$/u.exec(lines[0]);
     const image = /^!\[([^\]]+)\]\((images\/[a-z\d-]+\.png)\)$/u.exec(lines[0]);
     if (heading) {
       article.append(textElement("h" + heading[1].length, heading[2]));

@@ -1003,9 +1003,9 @@ function drawSettings() {
       segment("点选粘贴方式", "pasteMode", [["direct", "直接上屏"], ["manual", "手动粘贴"]])),
     settingRow("显示复制和粘贴提示", "在屏幕下方显示复制、选取和粘贴提示，约 3 秒后收起。", "bell", settingSwitch("显示复制和粘贴提示", "notifications")),
     settingRow("提示动画", "复制和粘贴提示以 0.5 秒轻缓进入、退出，可随时关闭。", "bell", settingSwitch("提示动画", "noticeAnimation")),
-    settingRow("启动通知", "启动后告知剪栈已在后台运行。选择永久关闭后，后续启动也不再提示。", "bell",
+    settingRow("启动通知", "启动后告知剪栈已在后台运行。剪栈的功能运行不依赖互联网，所以剪栈也绝不会利用这个功能推送广告。", "bell",
       segment("启动通知", "startupNotifications", [[true, "开启"], [false, "永久关闭"]])),
-    settingRow("软件更新", "每天检查一次 GitHub 正式版本，发现新版时通知。下载与安装由你决定。", "window",
+    settingRow("软件更新", "手动检查更新。推荐更新至最新版本。", "window",
       command("检查更新", () => void showUpdates())),
     drawAbout(),
   );
@@ -1039,7 +1039,7 @@ function drawAbout() {
   portrait.append(image, node("figcaption", "", "你认为自己是什么，那你就是什么。——摘自《狗生回忆录》"));
   about.append(
     node("h2", "", "关于"),
-    node("p", "", "剪栈 1.1.1"),
+    node("p", "", "剪栈 1.1.2"),
     node("p", "", "剪栈是一款适用于 Mac OS 和 Windows 的剪贴板管理工具。刚复制过的内容随时能找回，反复要用的资料可以加密收藏，收藏内容不会被系统搜索索引。"),
     node("p", "", "历史记录自动收录剪栈运行时复制的文字、链接、图片、富文本和文件引用。退出剪栈后仍可找回本次登录的记录，注销或关机时清空。"),
     node("p", "", "收藏夹长期保存手动收藏的内容，例如材料模板、常用单位全称、视频导出参数和二维码。收藏使用当前 Windows 用户加密。"),
@@ -1122,7 +1122,10 @@ function showAdd() {
 
 function showClear() {
   present("清空全部", "danger");
-  dialogBody.append(node("p", "dialog-description", `清空 ${state.history.length} 条历史记录及系统剪贴板？收藏仍保留。`));
+  dialogBody.append(
+    node("p", "dialog-description", "此操作将清空剪贴板记录，请确认。"),
+    node("p", "dialog-description dialog-note", "已点击收藏的剪贴板记录不受影响。调用收藏过的信息，请前往“收藏夹”。"),
+  );
   dialogSubmit("清空全部", () => invoke("clear_history"), { style: "danger" });
 }
 
