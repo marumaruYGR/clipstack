@@ -390,13 +390,14 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
   border: 1px solid var(--edge); border-left: 3px solid var(--success);
   background: var(--frame); color: var(--ink); box-shadow: none;
   font-size: 13px; font-weight: 600;
-  animation: clip-notice-in 145ms cubic-bezier(.22, 1, .36, 1) both;
+  animation: clip-notice-in 500ms cubic-bezier(.16, 1, .3, 1) both;
 }
 .clip-notice .glyph { color: var(--success); }
 .ak-notice.clip-notice::before { content: none; }
-.ak-notice.clip-notice-leaving { animation: clip-notice-out 120ms ease-in both; }
-@keyframes clip-notice-in { from { opacity: .18; transform: translateY(4px); } }
-@keyframes clip-notice-out { to { opacity: 0; transform: translateY(3px); } }
+.ak-notice.clip-notice-leaving { animation: clip-notice-out 500ms cubic-bezier(.7, 0, .84, 0) both; }
+.ak-notice.notice-motion-off { animation: none; }
+@keyframes clip-notice-in { from { opacity: 0; transform: translateY(6px) scale(.99); } to { opacity: 1; transform: none; } }
+@keyframes clip-notice-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px) scale(.995); } }
 
 .ak-dialog.app-dialog {
   position: fixed; max-width: min(520px, calc(100% - 24px)); width: 100%; max-height: calc(100% - 22px);
@@ -493,6 +494,9 @@ time { color: var(--muted); font: 11px/1 var(--ak-font-mono); white-space: nowra
 .manual-document :is(th, td) { padding: 7px 9px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .manual-document :is(th, td):first-child { min-width: 6em; }
 .manual-document th { background: var(--active); }
+.app-dialog .manual-document { padding: 0; border: 0; background: transparent; user-select: none; }
+.app-dialog .manual-document h1 { font-size: 22px; }
+.app-dialog .update-notes { max-height: 40vh; overflow: auto; margin: 12px 0; font-size: 13px; }
 .preview-rich :is(ul, ol) { padding-inline-start: 1.7em; }
 .preview-rich :is(th, td) { padding: 4px 8px; border: 1px solid var(--line); }
 .preview-rich table { border-collapse: collapse; }

@@ -44,6 +44,8 @@ pub struct Settings {
     pub autostart: bool,
     pub shortcut: Option<String>,
     pub notifications: bool,
+    pub notice_animation: bool,
+    pub startup_notifications: bool,
     pub paste_mode: PasteMode,
     pub seen_direct_paste: bool,
     pub seen_manual_paste: bool,
@@ -59,6 +61,8 @@ impl Default for Settings {
             autostart: true,
             shortcut: Some("Alt+V".into()),
             notifications: true,
+            notice_animation: true,
+            startup_notifications: true,
             paste_mode: PasteMode::Direct,
             seen_direct_paste: false,
             seen_manual_paste: false,
@@ -77,6 +81,8 @@ pub struct SettingsPatch {
     #[serde(deserialize_with = "present_shortcut")]
     pub shortcut: Option<Option<String>>,
     pub notifications: Option<bool>,
+    pub notice_animation: Option<bool>,
+    pub startup_notifications: Option<bool>,
     pub paste_mode: Option<PasteMode>,
 }
 
@@ -478,6 +484,19 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_settings_default_to_startup_notifications_and_motion() {
+        let old: Settings = serde_json::from_str(r#"{"notifications":false}"#).unwrap();
+        assert!(old.startup_notifications);
+        assert!(old.notice_animation);
+        assert!(!old.notifications);
+        let disabled: Settings =
+            serde_json::from_str(r#"{"startupNotifications":false,"noticeAnimation":false}"#)
+                .unwrap();
+        assert!(!disabled.startup_notifications);
+        assert!(!disabled.notice_animation);
+    }
 
     #[test]
     fn import_preserves_local_entries_and_deduplicates_content() {

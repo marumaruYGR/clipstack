@@ -107,8 +107,21 @@ pub fn show_paste_mode_tip(direct: bool) -> windows::core::Result<()> {
     }
 }
 
-pub fn show_welcome_1_1() -> windows::core::Result<()> {
-    show_system_notice("剪栈", "庆祝剪栈迈入 1.1 版本时代！", "welcome-1.1")
+pub fn show_startup(first_1_1: bool) -> windows::core::Result<()> {
+    let message = if first_1_1 {
+        "庆祝剪栈迈入 1.1 版本时代！已在后台运行，单击托盘图标打开快捷收纳区。"
+    } else {
+        "剪栈已启动，正在后台运行。单击托盘图标打开快捷收纳区。"
+    };
+    show_system_notice("剪栈", message, "startup")
+}
+
+pub fn show_update_available() -> windows::core::Result<()> {
+    show_system_notice(
+        "剪栈",
+        "剪栈有更新版本，请在设置中检查更新。",
+        "update-available",
+    )
 }
 
 fn show_system_notice(title: &str, message: &str, tag: &str) -> windows::core::Result<()> {
@@ -118,11 +131,28 @@ fn show_system_notice(title: &str, message: &str, tag: &str) -> windows::core::R
     let (identity, _) = RegKey::predef(HKEY_CURRENT_USER)
         .create_subkey(r"Software\Classes\AppUserModelId\cn.siyanghuasangou.clipstack")?;
     identity.set_value("DisplayName", &"剪栈")?;
+    let icon = std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .map(|root| root.join("剪栈").join("notification-icon.png"));
+    let image = icon
+        .and_then(|path| {
+            std::fs::create_dir_all(path.parent()?).ok()?;
+            crate::storage::write_backup_file(&path, include_bytes!("../../ui/assets/app.png"))
+                .ok()?;
+            let uri = tauri::Url::from_file_path(path).ok()?.to_string();
+            let _ = identity.set_value("IconUri", &uri);
+            Some(format!(
+                "<image placement=\"appLogoOverride\" src=\"{}\"/>",
+                xml_escape(&uri)
+            ))
+        })
+        .unwrap_or_default();
 
     let _apartment = ComApartment::enter()?;
     let xml = XmlDocument::new()?;
     xml.LoadXml(&HSTRING::from(format!(
-        "<toast><visual><binding template=\"ToastGeneric\"><text>{title}</text><text>{message}</text></binding></visual><audio silent=\"true\"/></toast>",
+        "<toast><visual><binding template=\"ToastGeneric\">{image}<text>{}</text><text>{}</text></binding></visual><audio silent=\"true\"/></toast>",
+        xml_escape(title), xml_escape(message)
     )))?;
     let toast = ToastNotification::CreateToastNotification(&xml)?;
     toast.SetTag(&HSTRING::from(tag))?;
@@ -130,6 +160,13 @@ fn show_system_notice(title: &str, message: &str, tag: &str) -> windows::core::R
         "cn.siyanghuasangou.clipstack",
     ))?
     .Show(&toast)
+}
+
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 pub fn signed_in_account_matches(expected: &str) -> bool {

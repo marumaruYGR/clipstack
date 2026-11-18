@@ -879,8 +879,11 @@ function drawQuickRecord(item) {
 }
 
 function drawNotice(value) {
+  const animate = typeof value === "object" ? value.animate : state?.settings.noticeAnimation !== false;
+  value = typeof value === "object" ? value.message : value;
   if (typeof value !== "string") return;
   const notice = node("div", "ak-notice clip-notice");
+  if (!animate) notice.classList.add("notice-motion-off");
   notice.setAttribute("role", "status");
   notice.append(icon("check"), node("span", "", value));
   mount.replaceChildren(notice);
@@ -999,6 +1002,11 @@ function drawSettings() {
     settingRow("点选粘贴方式", "控制快捷收纳区、剪贴板和收藏夹中点选记录的行为。直接上屏会粘贴到原窗口，手动粘贴需回到目标窗口按 Ctrl+V。", "keyboard",
       segment("点选粘贴方式", "pasteMode", [["direct", "直接上屏"], ["manual", "手动粘贴"]])),
     settingRow("显示复制和粘贴提示", "在屏幕下方显示复制、选取和粘贴提示，约 3 秒后收起。", "bell", settingSwitch("显示复制和粘贴提示", "notifications")),
+    settingRow("提示动画", "复制和粘贴提示以 0.5 秒轻缓进入、退出，可随时关闭。", "bell", settingSwitch("提示动画", "noticeAnimation")),
+    settingRow("启动通知", "启动后告知剪栈已在后台运行。选择永久关闭后，后续启动也不再提示。", "bell",
+      segment("启动通知", "startupNotifications", [[true, "开启"], [false, "永久关闭"]])),
+    settingRow("软件更新", "每天检查一次 GitHub 正式版本，发现新版时通知。下载与安装由你决定。", "window",
+      command("检查更新", () => void showUpdates())),
     drawAbout(),
   );
   return view;
@@ -1019,7 +1027,7 @@ function drawAbout() {
   manual.draggable = false;
   manual.addEventListener("click", (event) => {
     event.preventDefault();
-    void openPreview(manualPreviewId);
+    void showManual();
   });
   build.append("由 Rust 构建并驱动，使用 Tauri 绘制 UI，使用 ", license, " 作为主要 UI。不明白怎么用？", manual, "。");
   const portrait = node("figure", "portrait");
@@ -1031,7 +1039,7 @@ function drawAbout() {
   portrait.append(image, node("figcaption", "", "你认为自己是什么，那你就是什么。——摘自《狗生回忆录》"));
   about.append(
     node("h2", "", "关于"),
-    node("p", "", "剪栈 1.1.0fix1"),
+    node("p", "", "剪栈 1.1.1"),
     node("p", "", "剪栈是一款适用于 Mac OS 和 Windows 的剪贴板管理工具。刚复制过的内容随时能找回，反复要用的资料可以加密收藏，收藏内容不会被系统搜索索引。"),
     node("p", "", "历史记录自动收录剪栈运行时复制的文字、链接、图片、富文本和文件引用。退出剪栈后仍可找回本次登录的记录，注销或关机时清空。"),
     node("p", "", "收藏夹长期保存手动收藏的内容，例如材料模板、常用单位全称、视频导出参数和二维码。收藏使用当前 Windows 用户加密。"),
@@ -1114,7 +1122,7 @@ function showAdd() {
 
 function showClear() {
   present("清空全部", "danger");
-  dialogBody.append(node("p", "dialog-description", `清空本次 Windows 登录中的 ${state.history.length} 条剪贴板记录？`));
+  dialogBody.append(node("p", "dialog-description", `清空 ${state.history.length} 条历史记录及系统剪贴板？收藏仍保留。`));
   dialogSubmit("清空全部", () => invoke("clear_history"), { style: "danger" });
 }
 
@@ -1307,6 +1315,63 @@ async function showLicense() {
     }
   } catch (error) {
     if (session === dialogSession) dialogErrorText(errorMessage(error));
+  }
+}
+
+async function showManual() {
+  const session = present("使用手册");
+  dialogActions.append(command("关闭", () => dialog.close(), null, "primary"));
+  try {
+    const item = await invoke("read_preview", { id: manualPreviewId });
+    if (session === dialogSession && dialog.open) {
+      dialogBody.append(renderManual(item.text, () => void perform("open_release_page", {}, { refresh: false })));
+    }
+  } catch (error) {
+    if (session === dialogSession) dialogErrorText(errorMessage(error));
+  }
+}
+
+async function showUpdates() {
+  const session = present("检查更新");
+  const status = node("p", "dialog-description", "正在检查更新…");
+  status.setAttribute("role", "status");
+  dialogBody.append(status);
+  dialogActions.append(command("关闭", () => dialog.close(), null, "primary"));
+  try {
+    const result = await invoke("check_updates");
+    if (session !== dialogSession || !dialog.open) return;
+    const update = result.update;
+    if (!update) {
+      status.textContent = "当前使用的是最新版本 " + result.currentVersion + "。";
+      return;
+    }
+    dialogTitle.textContent = "发现新版本";
+    status.textContent = result.currentVersion + " → " + update.version + " · 下载约 " +
+      (update.size / 1024 / 1024).toFixed(1) + " MB。是否更新？";
+    const notes = renderManual(update.notes || "此版本未提供更新日志。", () => void perform("open_release_page", {}, { refresh: false }));
+    notes.classList.add("update-notes");
+    dialogBody.append(notes);
+    const progress = node("p", "dialog-description");
+    progress.setAttribute("role", "status");
+    dialogBody.append(progress);
+    dialogActions.replaceChildren();
+    dialogSubmit("下载并安装", async () => {
+      progress.textContent = "正在下载…";
+      const unlisten = await bridge.event.listen("update-progress", ({ payload }) => {
+        if (session === dialogSession) progress.textContent = "下载 " +
+          Math.floor(payload.downloaded * 100 / payload.total) + "%，完成后将请求管理员权限安装。";
+      });
+      try {
+        await invoke("install_update", { version: update.version });
+      } finally {
+        unlisten();
+      }
+    }, { refreshAfter: false, cancel: "稍后再说" });
+  } catch (error) {
+    if (session === dialogSession && dialog.open) {
+      status.textContent = "暂时无法检查更新。";
+      dialogErrorText(errorMessage(error));
+    }
   }
 }
 

@@ -71,7 +71,7 @@ pub const SENT_NOTICE: &str = "已发送粘贴";
 pub const PASTED_NOTICE: &str = "所选内容已输入";
 pub const PASTE_FALLBACK_NOTICE: &str = "已复制，请按 Ctrl+V 粘贴";
 const NOTICE_DURATION: Duration = Duration::from_secs(3);
-const NOTICE_EXIT_LEAD: Duration = Duration::from_millis(130);
+const NOTICE_EXIT_LEAD: Duration = Duration::from_millis(500);
 const DARK_TRAY: &[u8] = include_bytes!("../icons/tray-dark.png");
 const LIGHT_TRAY: &[u8] = include_bytes!("../icons/tray-light.png");
 
@@ -747,7 +747,10 @@ pub fn sync_paste_watch(app: &AppHandle) {
     let model = state.lock().unwrap();
     clipboard::set_paste_watch(
         model.pending_manual_paste.is_some()
-            || matches!(model.notice, Some(COPY_NOTICE | PICK_NOTICE | PASTE_FALLBACK_NOTICE)),
+            || matches!(
+                model.notice,
+                Some(COPY_NOTICE | PICK_NOTICE | PASTE_FALLBACK_NOTICE)
+            ),
     );
 }
 
@@ -781,7 +784,16 @@ pub fn show_notice_at(app: &AppHandle, message: &'static str, position: Option<(
         let _ = toast.set_position(PhysicalPosition::new(x, y));
         let _ = toast.set_size(PhysicalSize::new(width as u32, height as u32));
     }
-    let _ = toast.emit("clipboard-notice", message);
+    let animate = app
+        .state::<AppModel>()
+        .lock()
+        .unwrap()
+        .settings
+        .notice_animation;
+    let _ = toast.emit(
+        "clipboard-notice",
+        serde_json::json!({ "message": message, "animate": animate }),
+    );
     round_panel(&toast);
     let _ = toast.show();
     clipboard::set_paste_watch(watch_paste);
@@ -808,7 +820,9 @@ fn animate_notice_exit(app: &AppHandle, generation: u64) {
     let current = {
         let state = app.state::<AppModel>();
         let model = state.lock().unwrap();
-        model.notice_generation == generation && model.notice.is_some()
+        model.notice_generation == generation
+            && model.notice.is_some()
+            && model.settings.notice_animation
     };
     if current {
         if let Some(toast) = app.get_webview_window("toast") {

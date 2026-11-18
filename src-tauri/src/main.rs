@@ -8,6 +8,7 @@ mod paste;
 mod preview;
 mod shell;
 mod storage;
+mod updates;
 mod windows_integration;
 
 use std::{path::PathBuf, sync::Mutex};
@@ -250,7 +251,12 @@ fn delete_items(app: AppHandle, ids: Vec<String>, model: State<AppModel>) -> Res
 
 #[tauri::command]
 fn clear_history(app: AppHandle, model: State<AppModel>) -> Result<(), String> {
-    model.lock().unwrap().clear()?;
+    {
+        let mut model = model.lock().unwrap();
+        clipboard::clear_history(|| model.clear())?;
+        model.pending_manual_paste = None;
+    }
+    shell::hide_notice(&app, None);
     shell::state_changed(&app);
     Ok(())
 }
@@ -502,6 +508,12 @@ fn update_settings(
     if let Some(value) = patch.notifications {
         next.notifications = value;
     }
+    if let Some(value) = patch.notice_animation {
+        next.notice_animation = value;
+    }
+    if let Some(value) = patch.startup_notifications {
+        next.startup_notifications = value;
+    }
     if let Some(value) = patch.paste_mode {
         next.paste_mode = value;
     }
@@ -611,11 +623,14 @@ fn start(app: &AppHandle, open_search: bool) -> Result<(), Box<dyn std::error::E
     let pasted = app.clone();
     let session = app.clone();
     clipboard::start(
-        move |content| {
+        move |content, sequence| {
             let handle = changed.clone();
             let added = {
                 let state = changed.state::<AppModel>();
                 let mut model = state.lock().unwrap();
+                if sequence != clipboard::sequence() {
+                    return;
+                }
                 if model.pending_manual_paste != Some(clipboard::sequence()) {
                     model.pending_manual_paste = None;
                 }
@@ -670,19 +685,35 @@ fn start(app: &AppHandle, open_search: bool) -> Result<(), Box<dyn std::error::E
     if open_search {
         shell::show_search(app)?;
     }
-    let state = app.state::<AppModel>();
-    let mut model = state.lock().unwrap();
-    if !model.settings.seen_welcome_1_1 {
-        match windows_integration::show_welcome_1_1() {
-            Ok(()) => {
-                model.settings.seen_welcome_1_1 = true;
-                if let Err(error) = model.storage.save_settings(&model.settings) {
-                    eprintln!("无法保存 1.1 首次启动状态：{error}");
-                }
-            }
-            Err(error) => eprintln!("无法发送 1.1 首次启动通知：{error}"),
+    let first_1_1 = !app
+        .state::<AppModel>()
+        .lock()
+        .unwrap()
+        .settings
+        .seen_welcome_1_1;
+    let startup_enabled = app
+        .state::<AppModel>()
+        .lock()
+        .unwrap()
+        .settings
+        .startup_notifications;
+    let startup_notice = if startup_enabled {
+        windows_integration::show_startup(first_1_1)
+    } else {
+        Ok(())
+    };
+    if startup_enabled && first_1_1 && startup_notice.is_ok() {
+        let state = app.state::<AppModel>();
+        let mut model = state.lock().unwrap();
+        model.settings.seen_welcome_1_1 = true;
+        if let Err(error) = model.storage.save_settings(&model.settings) {
+            eprintln!("无法保存 1.1 首次启动状态：{error}");
         }
     }
+    if let Err(error) = startup_notice {
+        eprintln!("无法发送启动通知：{error}");
+    }
+    updates::start(app)?;
     Ok(())
 }
 
@@ -750,7 +781,9 @@ fn main() {
             discard_favorites_import,
             restart_app,
             window_action,
-            update_settings
+            update_settings,
+            updates::check_updates,
+            updates::install_update
         ])
         .setup(move |app| start(app.handle(), open_search));
     if let Err(error) = app.run(tauri::generate_context!()) {

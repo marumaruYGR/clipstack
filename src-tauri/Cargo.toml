@@ -1,6 +1,6 @@
 [package]
 name = "clipstack"
-version = "1.1.0+1"
+version = "1.1.1"
 description = "剪栈 · Windows 剪贴板历史"
 edition = "2021"
 
@@ -14,6 +14,8 @@ custom-protocol = ["tauri/custom-protocol"]
 argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
 chacha20poly1305 = { version = "0.10.1", default-features = false, features = ["alloc"] }
 zeroize = "1.8.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "native-tls", "system-proxy"] }
+sha2 = "0.10"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"

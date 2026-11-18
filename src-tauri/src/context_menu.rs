@@ -3,7 +3,7 @@ use webview2_com::{
     take_pwstr, ContextMenuRequestedEventHandler,
     Microsoft::Web::WebView2::Win32::{
         ICoreWebView2ContextMenuItemCollection, ICoreWebView2_11,
-        COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SUBMENU,
+        COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SUBMENU, COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND_IMAGE,
     },
 };
 use windows_core::{Interface, PWSTR};
@@ -20,7 +20,12 @@ fn register(view: &PlatformWebview) -> windows_core::Result<()> {
     let browser = unsafe { view.controller().CoreWebView2()? }.cast::<ICoreWebView2_11>()?;
     let handler = ContextMenuRequestedEventHandler::create(Box::new(|_, args| {
         if let Some(args) = args {
-            filter(&unsafe { args.MenuItems()? })?;
+            let mut kind = Default::default();
+            unsafe { args.ContextMenuTarget()?.Kind(&mut kind)? };
+            filter(
+                &unsafe { args.MenuItems()? },
+                kind == COREWEBVIEW2_CONTEXT_MENU_TARGET_KIND_IMAGE,
+            )?;
         }
         Ok(())
     }));
@@ -28,7 +33,7 @@ fn register(view: &PlatformWebview) -> windows_core::Result<()> {
     unsafe { browser.add_ContextMenuRequested(&handler, &mut 0) }
 }
 
-fn filter(items: &ICoreWebView2ContextMenuItemCollection) -> windows_core::Result<()> {
+fn filter(items: &ICoreWebView2ContextMenuItemCollection, image: bool) -> windows_core::Result<()> {
     unsafe {
         let mut count = 0;
         items.Count(&mut count)?;
@@ -36,16 +41,19 @@ fn filter(items: &ICoreWebView2ContextMenuItemCollection) -> windows_core::Resul
             let item = items.GetValueAtIndex(index)?;
             let mut name = PWSTR::null();
             item.Name(&mut name)?;
-            if matches!(
-                take_pwstr(name).as_str(),
-                "saveAs" | "saveImageAs" | "saveLinkAs" | "print"
-            ) {
+            let name = take_pwstr(name);
+            if (image && name != "copyImage")
+                || matches!(
+                    name.as_str(),
+                    "saveAs" | "saveImageAs" | "saveLinkAs" | "print"
+                )
+            {
                 items.RemoveValueAtIndex(index)?;
             } else {
                 let mut kind = Default::default();
                 item.Kind(&mut kind)?;
                 if kind == COREWEBVIEW2_CONTEXT_MENU_ITEM_KIND_SUBMENU {
-                    filter(&item.Children()?)?;
+                    filter(&item.Children()?, image)?;
                 }
             }
         }

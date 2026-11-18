@@ -207,7 +207,7 @@ thread_local! {
 }
 
 pub fn start(
-    on_change: impl Fn(Content) + Send + 'static,
+    on_change: impl Fn(Content, u32) + Send + 'static,
     on_paste: impl Fn(u32, bool) + Send + 'static,
     on_session_end: impl Fn() + Send + 'static,
 ) -> Result<(), String> {
@@ -335,7 +335,7 @@ unsafe extern "system" fn window_proc(
     }
 }
 
-fn run_listener(hwnd: HWND, on_change: impl Fn(Content), on_paste: impl Fn(u32, bool)) {
+fn run_listener(hwnd: HWND, on_change: impl Fn(Content, u32), on_paste: impl Fn(u32, bool)) {
     let formats = RegisteredFormats::register();
     let mut last_sequence = None;
     let mut read_retries = 0;
@@ -367,7 +367,7 @@ fn run_listener(hwnd: HWND, on_change: impl Fn(Content), on_paste: impl Fn(u32, 
                         unsafe { KillTimer(hwnd, READ_TIMER) };
                         last_sequence = Some(sequence);
                         if let Some(content) = payload.and_then(Snapshot::into_content) {
-                            on_change(content);
+                            on_change(content, sequence);
                         }
                     }
                     Err(()) if read_retries > 0 => {
@@ -673,6 +673,28 @@ fn decode_image(mut decoder: impl ImageDecoder) -> Option<image::RgbaImage> {
 
 pub fn sequence() -> u32 {
     unsafe { GetClipboardSequenceNumber() }
+}
+
+pub fn clear_history(clear_records: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let hwnd = LISTENER.load(Ordering::Acquire);
+    if hwnd.is_null() {
+        return Err("剪贴板监听尚未启动".into());
+    }
+    let mut clipboard = OpenGuard::open(hwnd);
+    for _ in 0..READ_RETRIES {
+        if clipboard.is_some() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+        clipboard = OpenGuard::open(hwnd);
+    }
+    let _clipboard = clipboard.ok_or("系统剪贴板正忙，请重试")?;
+    // Reserve the clipboard before changing history, so a busy clipboard leaves both intact.
+    clear_records()?;
+    if unsafe { EmptyClipboard() } == 0 {
+        return Err(win_error("无法清空系统剪贴板，请重试"));
+    }
+    Ok(())
 }
 
 pub fn write(content: &Content) -> Result<u32, String> {
