@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; font-src 'none'; script-src 'none'; connect-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>剪栈使用手册</title>
+<style>
+:root { color-scheme: light dark; font: 14px/1.75 -apple-system, BlinkMacSystemFont, sans-serif; }
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
+body { margin: 0 auto; padding: 24px 30px 50px; max-width: 860px; color: CanvasText; background: Canvas; }
+h1 { margin: 0 0 6px; font-size: 27px; letter-spacing: -.6px; line-height: 1.35; }
+h2 { font-size: 19px; margin: 30px 0 12px; line-height: 1.5; }
+h3 { font-size: 15px; margin: 22px 0 8px; }
+p, ul, ol { margin: 10px 0; }
+ul, ol { padding-left: 1.6em; }
+li + li { margin-top: 5px; }
+figcaption, .muted { color: GrayText; font-size: 12px; }
+figure { margin: 18px 0; }
+img { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid color-mix(in srgb, CanvasText 12%, transparent); }
+figure.quick img { max-width: 410px; margin: auto; }
+figcaption { text-align: center; margin-top: 7px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, transparent); padding: 10px 8px; vertical-align: top; }
+th { font-weight: 600; }
+code, kbd { font: 12px ui-monospace, SFMono-Regular, monospace; padding: 2px 5px; border-radius: 4px; background: color-mix(in srgb, CanvasText 7%, transparent); }
+</style>
+</head>
+<body>
+<h1>剪栈使用手册</h1>
+<p class="muted">macOS 26 及以上 · 剪栈 1.1.2 · 离线阅读</p>
+<p>刚复制过的文字、链接、图片和文件都能从历史里找回。只用一次的资料留在剪贴板，反复要用的内容可手动加密收藏。</p>
+<h2>三步上手</h2>
+<ol>
+<li>在网页、文档或聊天里复制内容，使用鼠标菜单或 <kbd>⌘+C</kbd>。</li>
+<li>回到目标应用，把光标放在要插入的位置。</li>
+<li>按 <kbd>Control+V</kbd> 或单击菜单栏的剪栈图标，点选一条记录。默认「直接上屏」会回到原应用并尝试粘贴。</li>
+</ol>
+<p>需要自己决定粘贴时机，可在「设置 → 点选粘贴方式」选择「手动粘贴」，点选后回到目标应用按 <kbd>⌘+V</kbd>。</p>
+<h2>安装、启动与退出</h2>
+<p>打开安装镜像，将剪栈拖到 Applications。启动后剪栈驻留在菜单栏。直接启动、登录自启动、重复打开和应用内重启都会安静地进入后台。</p>
+<p>主窗口通过菜单栏右键「显示主界面」、快捷收纳区「查看全部」或 Dock 右键「检索剪贴板」打开。主窗口打开时显示 Dock 图标，关闭后继续在菜单栏记录复制。菜单栏与 Dock 菜单中的「退出」会结束整个应用。</p>
+<p>启动通知会告知剪栈已在后台运行。设置中选择「启动通知 → 永久关闭」可保存这一选择。</p>
+<h2>快捷收纳区</h2>
+<figure class="quick"><img src="images/01-quick-picker.png" alt="快捷收纳区，包含六条记录、添加内容、置顶与底部操作"><figcaption>菜单栏单击打开，最多同时显示六条，滚动查看其余记录。</figcaption></figure>
+<ul>
+<li>点选记录，按设置直接上屏或准备手动粘贴。鼠标经过一行时会轻量高亮。</li>
+<li>右上角的大头钉用于置顶。启用后切换应用仍保持显示，取消后失焦自动收起。</li>
+<li>「查看全部」进入主窗口。「添加内容」保存输入的文字至历史和系统剪贴板，再点收藏可长期保留。</li>
+<li>确认「清空全部」后，系统剪贴板和剪栈历史同时清空，收藏继续保留。</li>
+</ul>
+<h2>直接上屏与手动粘贴</h2>
+<table><thead><tr><th>方式</th><th>操作</th><th>使用场景</th></tr></thead><tbody>
+<tr><td>直接上屏</td><td>先在目标应用放好光标，点选历史或收藏记录。</td><td>连续填表、整理会议记录、插入常用回复。</td></tr>
+<tr><td>手动粘贴</td><td>点选后切到目标应用按 ⌘+V。</td><td>先核对联系人、选中替换范围或检查插入位置。</td></tr>
+</tbody></table>
+<p>直接上屏需要 macOS 辅助功能授权。可从设置点击「授权直接上屏…」，在系统设置允许剪栈控制键盘输入。授权不足、目标窗口已关闭或焦点无法恢复时，会提示「已复制，请按 ⌘+V 粘贴」。</p>
+<p>打开快捷收纳区时按住的组合键，需要先全部松开。剪栈会等编辑焦点稳定后再发送粘贴。请在 Word 或 Pages 正文中放好光标，避免选中工具栏。</p>
+<p>两种模式首次使用时会各发送一次系统通知。手动粘贴已选内容时，若系统允许检测相应按键，屏幕下方会出现「已发送粘贴」。目标应用是否接受了内容，以实际编辑结果为准。</p>
+<h2>搜索、预览和管理记录</h2>
+<figure><img src="images/02-clipboard-history.png" alt="macOS 剪栈的剪贴板卡片界面"><figcaption>剪贴板卡片显示类型、时间和内容，可删除、收藏或打开预览。</figcaption></figure>
+<table><thead><tr><th>想做什么</th><th>操作</th></tr></thead><tbody>
+<tr><td>搜索</td><td>⌘+F 聚焦左侧搜索框。多个词用空格分开，如「会议 周五」。历史和收藏分别列出命中项。</td></tr>
+<tr><td>批量选择</td><td>⌘+A 全选当前历史，⌘ 加点按切换单条选择，Shift 加点按选一段，也可用鼠标拖动框选。</td></tr>
+<tr><td>删除历史</td><td>点「删除」，或选中后按 Delete / Backspace。</td></tr>
+<tr><td>收藏</td><td>点「收藏」后变为「已收藏」，再次点按可取消。清空历史仍保留收藏。</td></tr>
+<tr><td>预览</td><td>按空格或点眼睛按钮。按 Esc、再按空格或切出焦点即可关闭。</td></tr>
+</tbody></table>
+<figure><img src="images/03-text-preview.png" alt="独立文本预览窗口"><figcaption>先查看完整段落和换行，再决定取用。</figcaption></figure>
+<p>主窗口可见时，预览以主窗口为中心。主窗口隐藏或最小化时，预览以当前屏幕的可用区域为中心。图片可点按重播叠层相纸动画，图片预览的右键菜单提供「复制图像」。</p>
+<p>富文本段落通过原生富文本视图或内置 HTML 查看器呈现。复制的文件保留原始路径，图片文件提供图像预览，支持的文档通过 Quick Look 查看。程序、视频及其他文件可在 Finder 定位。文件已移动或无权限时，会显示相应说明。</p>
+<figure><img src="images/04-search-results.png" alt="实时搜索同时匹配剪贴板与收藏夹"><figcaption>结果按剪贴板和收藏夹分组，清空搜索框即可返回原页面。</figcaption></figure>
+<figure><img src="images/05-favorites.png" alt="收藏夹中的文本和图片卡片"><figcaption>经常使用的内容由用户手动收藏，重启仍可使用。</figcaption></figure>
+<h2>设置</h2>
+<figure><img src="images/06-settings.png" alt="macOS 设置，包含粘贴方式、提示动画和快捷键录入"><figcaption>长组合键在侧栏标题下按键名分组换行。</figcaption></figure>
+<table><thead><tr><th>项目</th><th>用途</th></tr></thead><tbody>
+<tr><td>登录时自动启动</td><td>控制当前用户登录后静默运行。系统要求批准时在「系统设置 → 通用 → 登录项与扩展」处理。</td></tr>
+<tr><td>外观</td><td>浅色、深色或跟随系统，使用 macOS 原生控件和 Liquid Glass。</td></tr>
+<tr><td>提示动画</td><td>复制和粘贴提示的进场与退场各 0.5 秒，可关闭，遵循系统减少动态效果。</td></tr>
+<tr><td>启动通知</td><td>选择开启或永久关闭。系统通知的授权可在 macOS 通知设置调整。</td></tr>
+<tr><td>快捷收纳区快捷键</td><td>点录入按钮后直接按组合键，默认 Control+V。冲突会提示并拒绝注册，也可选择「不注册」。</td></tr>
+<tr><td>收藏夹存储</td><td>可移动本机收藏文件，移动后确认重启。导出用于口令加密备份，导入用于验证口令和合并恢复。</td></tr>
+<tr><td>软件更新</td><td>后台每天检查一次，有新版时发送系统通知。手动「检查更新」查看日志，选择「下载并安装」后再安装。</td></tr>
+</tbody></table>
+<h2>加密备份与恢复</h2>
+<ol>
+<li>在「设置 → 收藏夹存储」点「导出」，选保存位置，输入并确认至少 12 个字符的口令。</li>
+<li>分别保管口令与 <code>.clipstack-backup</code> 文件。备份是导出时的收藏快照。</li>
+<li>换机或重装后点「导入」，选择备份文件并验证口令，再点「确认合并」。重复内容会跳过。</li>
+<li>若原收藏无法解密，恢复的收藏会写入新的「恢复的收藏」目录，原文件保留。</li>
+</ol>
+<p>本机收藏用 AES-256-GCM 加密，密钥存于钥匙串。把收藏文件放进 iCloud 可以同步文件，跨设备恢复请使用带口令的导出备份。收藏中的文件记录保存原始路径，文件本体需另行管理。软件不负担 iCloud 套餐费用。</p>
+<h2>亮点与实际使用场景</h2>
+<h3>整理会议纪要</h3><p>从邮件、网页和聊天依次复制结论、负责人和截止日期。回到 Word 或 Pages，把光标放在相应段落，用快捷收纳区逐条取用。</p>
+<h3>回复多个聊天窗口</h3><p>收藏常用报价和服务说明。先选手动粘贴，搜索客户名对应的片段，核对聊天对象后再按 ⌘+V。</p>
+<h3>挑选报告配图</h3><p>依次复制多张截图，打开独立预览查看细节。选中需要的图片后粘贴至 Keynote 或文档，常用图表可收藏。</p>
+<h3>反复使用导出参数</h3><p>用「添加内容」写下尺寸、帧率或命名规则，然后收藏。下次搜索参数关键词即可取用。</p>
+<h2>常见问题</h2>
+<p><b>昨天的记录去哪了？</b> 历史与当前登录会话关联，退出剪栈再打开可以继续使用同次登录历史，注销或关机后进入新历史。长期需要的内容请收藏。</p>
+<p><b>快捷键无反应？</b> 先单击菜单栏图标，检查是否选择了「不注册」，或更换冲突的组合键。</p>
+<p><b>直接上屏未插入？</b> 检查辅助功能授权，在正文中放好光标并松开组合键。看到手动粘贴提示后，可直接回到目标应用按 ⌘+V。</p>
+<p><b>如何彻底清空？</b> 选择「清空全部」并确认，系统剪贴板和剪栈历史一起清空，收藏继续保留。</p>
+<p><b>没有收到通知？</b> 屏幕下方的提示由剪栈设置控制，启动、模式和更新通知由 macOS 通知权限控制。手动粘贴按键检测也受系统输入访问权限影响。</p>
+<p><b>更新检查发现版本却无法安装？</b> 该版本需要提供对应的 macOS 安装镜像。下载后会核对文件大小和 SHA-256，失败时可重新检查和下载。</p>
+</body>
+</html>
