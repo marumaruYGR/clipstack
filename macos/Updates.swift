@@ -36,7 +36,7 @@ struct AvailableUpdate: Sendable {
     @Published private(set) var progress: Double = 0
     @Published private(set) var message = ""
     @Published private(set) var available: AvailableUpdate?
-    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.3"
+    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.4"
     nonisolated static let feedURL = URL(string: "https://raw.githubusercontent.com/marumaruYGR/clipstack/main/macos/update.json")!
     nonisolated static let releaseURL = URL(string: "https://api.github.com/repos/marumaruYGR/clipstack/releases/latest")!
     private let defaults = UserDefaults.standard

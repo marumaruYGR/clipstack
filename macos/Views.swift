@@ -494,14 +494,7 @@ struct SettingsView: View {
                 Picker("点选粘贴方式", selection: $app.pasteMode) {
                     ForEach(PasteMode.allCases) { Text($0.title).tag($0) }
                 }
-                HStack(alignment: .top) {
-                    Text("直接上屏会切回原应用并尝试粘贴，需要辅助功能授权。手动粘贴使用 ⌘+V。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    if !app.pasteAuthorized {
-                        Button("授权直接上屏…", action: app.authorizePaste)
-                    }
-                }
+                PasteAccessSettings(app: app, access: app.pasteAccess)
                 LabeledContent("快捷收纳区快捷键") {
                     VStack(alignment: .trailing, spacing: 7) {
                         Button(app.recordingHotkey ? "请按组合键…" : app.hotkeyLabel, action: app.recordHotkey)
@@ -573,6 +566,56 @@ struct SettingsView: View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Text("•").foregroundStyle(.secondary).accessibilityHidden(true)
             Text(text)
+        }
+    }
+}
+
+private struct PasteAccessSettings: View {
+    let app: Controller
+    @ObservedObject var access: PasteAccessController
+    @State private var showsHelp = false
+
+    var body: some View {
+        if !access.permissions.canPaste {
+            VStack(alignment: .leading, spacing: 9) {
+                Text(access.explanation)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    if access.needsRestart {
+                        Button("重启启用", action: app.restartForPasteAuthorization)
+                    } else {
+                        Button("设置授权…", action: app.authorizePaste)
+                    }
+                    Button(access.checking ? "正在检测…" : "重新检测") { app.refreshPasteAuthorization(checkFresh: true) }
+                        .disabled(access.checking || access.resetting)
+                    Button("授权说明") { showsHelp = true }
+                        .buttonStyle(.link)
+                        .popover(isPresented: $showsHelp) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("按你的需要选择").font(.headline)
+                                Text("手动粘贴无需此项授权。需要直接上屏时，可在系统的辅助功能设置中允许剪栈。文件数据访问与这项授权分开管理。")
+                                Text("如果系统已经允许，但这里仍未生效，可以先重启剪栈；仍不可用时，再重新设置授权并添加当前应用。")
+                                HStack {
+                                    Button("显示当前应用", action: access.revealApplication)
+                                    Button("复制诊断信息", action: access.copyReport)
+                                }
+                                Button(access.resetting ? "正在重新设置…" : "重新设置授权…") {
+                                    showsHelp = false
+                                    app.repairPasteAuthorization()
+                                }
+                                .disabled(access.resetting)
+                            }
+                            .font(.callout)
+                            .frame(width: 330, alignment: .leading)
+                            .padding(18)
+                        }
+                }
+                if !access.status.isEmpty {
+                    Text(access.status).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

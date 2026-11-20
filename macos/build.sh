@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+if [[ "${REQUIRE_STABLE_SIGNING:-0}" == "1" && "${SIGN_IDENTITY:--}" != "Developer ID Application:"* ]]; then
+    echo "正式发布需要使用固定的 Developer ID Application 证书设置 SIGN_IDENTITY。" >&2
+    exit 1
+fi
+
 DEST="${1:-$PWD/build}"
 mkdir -p "$DEST"
 DEST="$(cd "$DEST" && pwd)"
@@ -32,12 +37,25 @@ for ARCH in "${PLATFORM[@]}"; do
     TRIPLE="aarch64-apple-darwin"
     [[ "$ARCH" != x86_64 ]] || TRIPLE="x86_64-apple-darwin"
     MACOSX_DEPLOYMENT_TARGET=26.0 "${CARGO:-cargo}" build --locked --release --target "$TRIPLE" --target-dir "$TEMP/core"
-    "$TOOLS/swiftc" -O -sdk "$SDK" -module-cache-path "$TEMP/module" -target "$ARCH-apple-macosx26.0" \
+    COMPILE_FLAGS=(-O -emit-executable -module-name JianZhan)
+    if [[ "${KEEP_DEBUG_SYMBOLS:-0}" == "1" ]]; then
+        mkdir -p "$DEST/Debug/$ARCH"
+        COMPILE_FLAGS+=(-g -emit-module -emit-module-path "$DEST/Debug/$ARCH/JianZhan.swiftmodule")
+    fi
+    "$TOOLS/swiftc" "${COMPILE_FLAGS[@]}" -sdk "$SDK" -module-cache-path "$TEMP/module" -target "$ARCH-apple-macosx26.0" \
         Session.swift Store.swift SearchText.swift ClipboardFile.swift Hotkeys.swift Preview.swift Views.swift WorkspaceWindow.swift \
-        PortableBackup.swift Paste.swift Notices.swift Documents.swift Updates.swift BackupWindow.swift Main.swift \
+        PortableBackup.swift PasteAccess.swift Paste.swift Notices.swift Documents.swift Updates.swift BackupWindow.swift Main.swift \
         "$TEMP/core/$TRIPLE/release/libjianzhan_core.a" -o "$TEMP/app-$ARCH"
     TARGETS+=("$TEMP/app-$ARCH")
+    if [[ "${KEEP_DEBUG_SYMBOLS:-0}" == "1" && -d "$TEMP/app-$ARCH.dSYM" ]]; then
+        ditto "$TEMP/app-$ARCH.dSYM" "$DEST/Debug/$ARCH/JianZhan.dSYM"
+    fi
 done
 "$TOOLS/lipo" -create "${TARGETS[@]}" -output "$APP/Contents/MacOS/JianZhan"
-codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
+if [[ "${SIGN_IDENTITY:--}" == "Developer ID Application:"* ]]; then
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+else
+    codesign --force --sign "${SIGN_IDENTITY:--}" "$APP"
+fi
+codesign --verify --deep --strict "$APP"
 ditto "$APP" "$DEST/剪栈.app"

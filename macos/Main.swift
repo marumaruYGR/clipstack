@@ -43,6 +43,7 @@ final class GlassPanelSurface<Content: View>: NSView {
 @MainActor final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
     let store = Store()
     let updates = UpdateService()
+    let pasteAccess = PasteAccessController()
     private let notices = SystemNotices()
     private let pasteCoordinator = PasteCoordinator()
     @Published var page: Page? = .history {
@@ -311,12 +312,13 @@ final class GlassPanelSurface<Content: View>: NSView {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        refreshPasteAuthorization()
+        refreshPasteAuthorization(checkFresh: true)
     }
 
-    func refreshPasteAuthorization() {
+    func refreshPasteAuthorization(checkFresh: Bool = false) {
         lastAuthorizationCheck = Date()
-        let authorized = PasteCoordinator.authorized
+        pasteAccess.refresh(checkFresh: checkFresh)
+        let authorized = pasteAccess.permissions.canPaste
         if pasteAuthorized != authorized { pasteAuthorized = authorized }
         refreshPasteMonitor()
     }
@@ -462,10 +464,15 @@ final class GlassPanelSurface<Content: View>: NSView {
                 quick.orderOut(nil)
                 if pinned { quick.orderFrontRegardless() }
             }
-            pasteCoordinator.paste(changeCount: count) { [weak self] sent in
-                guard let self, NSPasteboard.general.changeCount == count else { return }
+            pasteCoordinator.paste(changeCount: count) { [weak self] outcome in
+                guard let self else { return }
+                self.pasteAccess.record(outcome, target: self.pasteCoordinator.target)
+                guard NSPasteboard.general.changeCount == count else { return }
                 self.refreshPasteAuthorization()
-                self.showToast(sent ? "已发送粘贴" : "已复制，请按 ⌘+V 粘贴")
+                switch outcome {
+                case .sent: self.showToast("已发送粘贴")
+                case .manual: self.showToast("已选取，按 ⌘+V 粘贴")
+                }
             }
         }
         showFirstPasteTip()
@@ -497,8 +504,26 @@ final class GlassPanelSurface<Content: View>: NSView {
     }
 
     func authorizePaste() {
-        PasteCoordinator.requestAuthorization()
-        refreshPasteAuthorization()
+        pasteCoordinator.preserveTargetForAuthorization()
+        pasteAccess.request()
+        refreshPasteAuthorization(checkFresh: true)
+    }
+
+    func repairPasteAuthorization() {
+        guard alert("重新设置直接上屏授权？",
+                    detail: "系统可能仍保存着旧版本的授权记录。此操作只重新设置剪栈的设备控制授权，之后由你选择是否允许。手动粘贴仍可使用。",
+                    buttons: ["重新设置", "保留当前设置"]) == .alertFirstButtonReturn else { return }
+        pasteCoordinator.preserveTargetForAuthorization()
+        pasteAccess.resetAndRequest()
+    }
+
+    func restartForPasteAuthorization() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.1; done; exec /usr/bin/open \"$2\"",
+                             "restart", String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundlePath]
+        do { try process.run(); NSApp.terminate(nil) }
+        catch { showToast("请退出后重新打开剪栈以应用授权。") }
     }
 
     func selectCard(_ clip: Clip, favorite: Bool) {
@@ -534,7 +559,7 @@ final class GlassPanelSurface<Content: View>: NSView {
         searchField?.abortEditing()
         updateSearchText("")
         page = destination
-        if destination == .settings { refreshPasteAuthorization() }
+        if destination == .settings { refreshPasteAuthorization(checkFresh: true) }
     }
 
     private var visibleHistory: [Clip] {
@@ -887,6 +912,14 @@ final class GlassPanelSurface<Content: View>: NSView {
 
 @main struct JianZhan {
     @MainActor static func main() {
+        if CommandLine.arguments.contains("--permission-probe") {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            if let data = try? encoder.encode(PastePermissionProbe.current()) {
+                FileHandle.standardOutput.write(data)
+            }
+            return
+        }
         if CommandLine.arguments.contains("--self-test") {
             try! selfTest()
             return

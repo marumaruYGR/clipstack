@@ -3,16 +3,16 @@
   "platform": "macos",
   "channel": "stable",
   "release": {
-    "tag_name": "v1.1.3",
-    "body": "在这一版本，首次实现了和大厂一样的跨平台同步更新。所以更新日志也向大厂学习：\n\n**修复一些已知问题。**",
+    "tag_name": "v1.1.4",
+    "body": "- 修复直接上屏的权限判断，按发送键盘事件所需的实际权限检测可用性。\n- 改进授权状态刷新，识别需要重启的情况，并提供可选的授权说明与恢复入口。\n- 未授权时显示「直接上屏需要系统授权，你也可以使用手动粘贴。」，已授权时隐藏授权提示和按钮。\n- 改进原应用与编辑焦点恢复，粘贴未能发送时保留内容供手动粘贴。\n- 新增不含剪贴内容的本机诊断信息，便于定位授权与焦点问题。",
     "draft": false,
     "prerelease": false,
     "assets": [
       {
-        "name": "clipstack-1.1.3-macos-universal.dmg",
-        "browser_download_url": "https://github.com/marumaruYGR/clipstack/releases/download/v1.1.3/clipstack-1.1.3-macos-universal.dmg",
-        "size": 16136199,
-        "digest": "sha256:8a0763c340a7dda77f3794d02bcb817cba6ed8059e8161c748796aea7e44f41b"
+        "name": "clipstack-1.1.4-macos-universal.dmg",
+        "browser_download_url": "https://github.com/marumaruYGR/clipstack/releases/download/v1.1.4/clipstack-1.1.4-macos-universal.dmg",
+        "size": 16489102,
+        "digest": "sha256:79011744be01968807e25d02fd63513e7ce63e450830d426d31174f1990b567c"
       }
     ]
   }
