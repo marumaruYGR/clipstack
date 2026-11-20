@@ -51,6 +51,8 @@ import SwiftUI
         workspaceToolbar.autosavesConfiguration = false
         window.toolbarStyle = .unified
         window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.toolbar = workspaceToolbar
         toolbarObservation = app.$page.combineLatest(app.$searchText).sink { [weak self] page, query in
             let showActions = (page ?? .history) == .history && !query.contains { !$0.isWhitespace }

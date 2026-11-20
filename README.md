@@ -1,10 +1,10 @@
-# 剪栈 1.1.2
+# 剪栈
 
 ## macOS 原生版
 
-支持 macOS 26 及以上版本，通用 App 同时适用于 Apple Silicon 和 Intel。提供原生 Liquid Glass 界面、菜单栏快捷收纳区、直接上屏、加密收藏及备份、实时搜索和离线图文使用手册。
+macOS 1.1.3 支持 macOS 26 及以上版本，通用 App 同时适用于 Apple Silicon 和 Intel。提供原生 Liquid Glass 界面、菜单栏快捷收纳区、直接上屏、加密收藏及备份、实时搜索和离线图文使用手册。
 
-[下载 macOS 通用安装镜像](https://github.com/marumaruYGR/clipstack/releases/download/v1.1.2/clipstack-1.1.2-macos-universal.dmg) · [下载 macOS 源码](https://github.com/marumaruYGR/clipstack/releases/download/v1.1.2/clipstack-1.1.2-macos-source.zip) · [源码与构建说明](macos/README.md)
+[下载 macOS 通用安装镜像](https://github.com/marumaruYGR/clipstack/releases/download/v1.1.3/clipstack-1.1.3-macos-universal.dmg) · [下载 macOS 源码](https://github.com/marumaruYGR/clipstack/releases/download/v1.1.3/clipstack-1.1.3-macos-source.zip) · [源码与构建说明](macos/README.md)
 
 ![剪栈 macOS 主窗口](macos/Assets/Manual/images/02-clipboard-history.png)
 

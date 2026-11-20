@@ -17,6 +17,13 @@ struct ReleaseInfo: Decodable, Sendable {
     let assets: [ReleaseAsset]
 }
 
+struct MacUpdateFeed: Decodable, Sendable {
+    let schemaVersion: Int
+    let platform: String
+    let channel: String
+    let release: ReleaseInfo
+}
+
 struct AvailableUpdate: Sendable {
     let version: String
     let notes: String
@@ -29,7 +36,9 @@ struct AvailableUpdate: Sendable {
     @Published private(set) var progress: Double = 0
     @Published private(set) var message = ""
     @Published private(set) var available: AvailableUpdate?
-    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.2"
+    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.3"
+    nonisolated static let feedURL = URL(string: "https://raw.githubusercontent.com/marumaruYGR/clipstack/main/macos/update.json")!
+    nonisolated static let releaseURL = URL(string: "https://api.github.com/repos/marumaruYGR/clipstack/releases/latest")!
     private let defaults = UserDefaults.standard
     private var timer: Timer?
     private var lastAttempt = Date.distantPast
@@ -54,16 +63,7 @@ struct AvailableUpdate: Sendable {
         Task {
             defer { checking = false }
             do {
-                var request = URLRequest(url: URL(string: "https://api.github.com/repos/marumaruYGR/clipstack/releases/latest")!)
-                request.timeoutInterval = 25
-                request.setValue("Clipstack/\(currentVersion) macOS", forHTTPHeaderField: "User-Agent")
-                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-                request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 2 * 1024 * 1024 else {
-                    throw ClipstackError("无法读取发布信息，请稍后重试。")
-                }
-                let release = try JSONDecoder().decode(ReleaseInfo.self, from: data)
+                let release = try await Self.fetchRelease(current: currentVersion)
                 available = try Self.select(release, current: currentVersion)
                 defaults.set(Date(), forKey: "lastUpdateCheck")
                 if let available {
@@ -82,7 +82,44 @@ struct AvailableUpdate: Sendable {
         }
     }
 
-    static func version(_ text: String) -> [UInt64]? {
+    nonisolated static func fetchRelease(current: String, session: URLSession = .shared) async throws -> ReleaseInfo {
+        var lastError: Error = ClipstackError("无法读取 macOS 更新信息，请稍后重试。")
+        for url in [feedURL, releaseURL] {
+            do {
+                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+                request.setValue("Clipstack/\(current) macOS", forHTTPHeaderField: "User-Agent")
+                request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+                if url == releaseURL {
+                    request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+                    request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+                }
+                let (data, response) = try await session.data(for: request)
+                guard let response = response as? HTTPURLResponse else {
+                    throw ClipstackError("更新服务未返回有效响应，请稍后重试。")
+                }
+                if [403, 429].contains(response.statusCode) {
+                    throw ClipstackError("更新服务暂时繁忙，请稍后重试。")
+                }
+                guard response.statusCode == 200, data.count <= 2 * 1024 * 1024 else {
+                    throw ClipstackError("无法读取 macOS 更新信息，请稍后重试。")
+                }
+                if url == feedURL {
+                    let feed = try JSONDecoder().decode(MacUpdateFeed.self, from: data)
+                    guard feed.schemaVersion == 1, feed.platform == "macos", feed.channel == "stable" else {
+                        throw ClipstackError("更新信息不适用于当前系统。")
+                    }
+                    return feed.release
+                }
+                return try JSONDecoder().decode(ReleaseInfo.self, from: data)
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    nonisolated static func version(_ text: String) -> [UInt64]? {
         let value = text.hasPrefix("v") ? String(text.dropFirst()) : text
         let parts = value.replacingOccurrences(of: "fix", with: "+").split(separator: "+", omittingEmptySubsequences: false)
         guard parts.count <= 2 else { return nil }
@@ -93,36 +130,47 @@ struct AvailableUpdate: Sendable {
         return values + [fix]
     }
 
-    static func select(_ release: ReleaseInfo, current: String) throws -> AvailableUpdate? {
+    nonisolated static func select(_ release: ReleaseInfo, current: String) throws -> AvailableUpdate? {
         guard !release.draft, !release.prerelease else { return nil }
         guard let current = version(current), let next = version(release.tag_name) else {
             throw ClipstackError("无法识别发布版本号。")
         }
         guard current.lexicographicallyPrecedes(next) else { return nil }
         let label = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst()) : release.tag_name
+        let accepted = acceptedNames(label)
+        guard let asset = accepted.lazy.compactMap({ name in release.assets.first { $0.name == name } }).first else {
+            throw ClipstackError("发现 \(label)，该版本的 macOS 安装包尚未发布。")
+        }
+        _ = try validatedAssetURL(asset, tag: release.tag_name)
+        return AvailableUpdate(version: label, notes: displayText(release.body ?? "此版本未提供更新日志。"), asset: asset)
+    }
+
+    nonisolated private static func acceptedNames(_ version: String) -> [String] {
         #if arch(arm64)
         let architecture = "arm64"
         #else
         let architecture = "x64"
         #endif
-        let accepted = ["clipstack-\(label)-macos-universal.dmg", "剪栈-\(label).dmg",
-                        "clipstack-\(label)-macos-\(architecture).dmg"]
-        guard let asset = accepted.lazy.compactMap({ name in release.assets.first { $0.name == name } }).first else {
-            throw ClipstackError("发现 \(label)，该版本的 macOS 安装包尚未发布。")
-        }
+        return ["clipstack-\(version)-macos-universal.dmg", "剪栈-\(version).dmg",
+                "clipstack-\(version)-macos-\(architecture).dmg"]
+    }
+
+    nonisolated private static func validatedAssetURL(_ asset: ReleaseAsset, tag: String) throws -> URL {
+        let label = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         var expected = URL(string: "https://github.com/marumaruYGR/clipstack/releases/download")!
-        expected.append(path: release.tag_name)
+        expected.append(path: tag)
         expected.append(path: asset.name)
-        guard URL(string: asset.browser_download_url) == expected,
+        guard version(tag) != nil, acceptedNames(label).contains(asset.name),
+              URL(string: asset.browser_download_url) == expected,
               asset.size > 0, asset.size <= Int64(PortableBackup.limit),
               let digest = asset.digest, digest.hasPrefix("sha256:"), digest.count == 71,
               digest.dropFirst(7).allSatisfy({ $0.isHexDigit && $0.isASCII }) else {
             throw ClipstackError("新版安装包地址、大小或 SHA-256 校验信息无效。")
         }
-        return AvailableUpdate(version: label, notes: displayText(release.body ?? "此版本未提供更新日志。"), asset: asset)
+        return expected
     }
 
-    static func displayText(_ text: String) -> String {
+    nonisolated static func displayText(_ text: String) -> String {
         let links = try! NSRegularExpression(pattern: #"(?i)(?:https?://)?(?:[a-z0-9-]+\.)*github(?:usercontent)?\.com[^\s<>]*"#)
         let clean = links.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text),
                                                   withTemplate: "更新发布服务")
@@ -163,16 +211,17 @@ struct AvailableUpdate: Sendable {
         }
     }
 
-    nonisolated static func download(_ asset: ReleaseAsset, to file: URL,
+    nonisolated static func download(_ asset: ReleaseAsset, to file: URL, session: URLSession = .shared,
                                      progress: @escaping @Sendable (Double) -> Void) async throws {
         let temp = file.deletingLastPathComponent().appending(path: ".download-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: temp) }
-        guard let url = URL(string: asset.browser_download_url), url.scheme == "https" else {
+        guard let candidate = URL(string: asset.browser_download_url), candidate.pathComponents.count == 7 else {
             throw ClipstackError("安装包地址无效。")
         }
+        let url = try validatedAssetURL(asset, tag: candidate.pathComponents[5])
         var request = URLRequest(url: url)
         request.timeoutInterval = 180
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
               response.url?.scheme == "https",
               response.expectedContentLength < 0 || response.expectedContentLength == asset.size else {

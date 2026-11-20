@@ -1,12 +1,12 @@
-# 剪栈 1.1.2
+# 剪栈 1.1.3
 
 适用于 macOS 26 及以上版本的原生剪贴板工具，通用 App 包含 Apple Silicon 和 Intel 64 位代码。AppKit 和 SwiftUI 实现 Liquid Glass 界面，Rust 管理历史、收藏索引、搜索、登录会话锁与收藏备份加密。
 
 ## 安装与使用
 
-打开「剪栈-1.1.2.dmg」，将剪栈拖入 Applications。启动、登录自启动、重复启动和应用内重启均静默驻留菜单栏。单击图标打开快捷收纳区，右键「显示主界面」或「查看全部」打开主窗口。关闭主窗口继续运行，菜单中的「退出」结束应用。
+打开「剪栈-1.1.3.dmg」，将剪栈拖入 Applications。启动、登录自启动、重复启动和应用内重启均静默驻留菜单栏。单击图标打开快捷收纳区，右键「显示主界面」或「查看全部」打开主窗口。关闭主窗口继续运行，菜单中的「退出」结束应用。
 
-默认快捷键为 Control+V。选取记录后默认回到原应用并发送 ⌘+V，可在设置改为手动粘贴。直接上屏需要 macOS 辅助功能授权，设置提供授权入口。应用外的粘贴按键检测受系统输入访问权限影响。点击卡片上的眼睛或按空格打开预览，失焦、Esc 或空格关闭。
+默认快捷键为 Control+V。选取记录后默认回到原应用并发送 ⌘+V，可在设置改为手动粘贴。直接上屏需要 macOS 辅助功能授权，设置会静默检测权限，仅在尚未授权时显示授权入口。应用外的粘贴按键检测受系统输入访问权限影响。点击卡片上的眼睛或按空格打开预览，失焦、Esc 或空格关闭。
 
 设置的「关于」提供完整离线图文手册。更新内容见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -22,9 +22,9 @@ HTML、RTF、RTFD、图像和本机文件引用保留原始表示，HTML 预览�
 
 ## 更新
 
-设置手动检查 正式发布服务，后台每日检查并发送新版通知。仅选择当前架构适用的 macOS DMG，校验大小和 SHA-256 后准备安装。当前目录可写时暂存新版，退出旧进程后替换并静默启动，保留上一个应用副本。目录不可写或从镜像运行时，在 Finder 打开已校验镜像，提示用户退出后将镜像中的剪栈拖入 Applications。
+设置优先读取独立的 macOS 稳定版更新信息，发布接口作为备用来源。后台检查并发送新版通知。仅选择当前架构适用的 macOS DMG，校验大小和 SHA-256 后准备安装。当前目录可写时暂存新版，退出旧进程后替换并静默启动，保留上一个应用副本。目录不可写或从镜像运行时，在 Finder 打开已校验镜像，提示用户退出后将镜像中的剪栈拖入 Applications。
 
-发布资产命名采用「剪栈-版本.dmg」或「clipstack-版本-macos-universal.dmg」，也可分别提供「macos-arm64」和「macos-x64」DMG。正式发布需提供 发布服务生成的 SHA-256 digest。
+发布资产命名采用「剪栈-版本.dmg」或「clipstack-版本-macos-universal.dmg」，也可分别提供「macos-arm64」和「macos-x64」DMG。发布前必须核对安装包的大小与 SHA-256 digest，并同步仓库 macos/update.json 的稳定版信息。该文件的 schemaVersion 为 1、platform 为 macos、channel 为 stable，release 内仅列出已发布的 macOS DMG。其他平台发布时应保留这条原生更新通道。
 
 ## 构建
 
@@ -33,6 +33,7 @@ HTML、RTF、RTFD、图像和本机文件引用保留原始表示，HTML 预览�
 ```sh
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 cargo test -- --test-threads=1
+./Tests/run-update-tests.sh
 UNIVERSAL=1 ./build.sh ./build
 ./build/剪栈.app/Contents/MacOS/JianZhan --self-test
 python3 -m pip install 'ds_store==1.3.1' 'mac_alias==2.2.2'

@@ -77,6 +77,7 @@ final class GlassPanelSurface<Content: View>: NSView {
     @Published var pasteMode = PasteMode(rawValue: UserDefaults.standard.string(forKey: "pasteMode") ?? "") ?? .direct {
         didSet { UserDefaults.standard.set(pasteMode.rawValue, forKey: "pasteMode") }
     }
+    @Published private(set) var pasteAuthorized = PasteCoordinator.authorized
     @Published var theme = UserDefaults.standard.string(forKey: "theme") ?? "system" {
         didSet {
             UserDefaults.standard.set(theme, forKey: "theme")
@@ -106,6 +107,7 @@ final class GlassPanelSurface<Content: View>: NSView {
     private var monitors: [Any] = []
     private var pasteTap: CFMachPort?
     private var pasteSource: CFRunLoopSource?
+    private var lastAuthorizationCheck = Date.distantPast
     private var lastHotkeyID: UInt32 = 0
     private var sessionObserver: NSObjectProtocol?
     private let defaults = UserDefaults.standard
@@ -146,7 +148,7 @@ final class GlassPanelSurface<Content: View>: NSView {
                 if !self.pinned { self.quick?.orderOut(nil) }
             }
         }) { monitors.append(global) }
-        refreshPasteMonitor()
+        refreshPasteAuthorization()
         sessionObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.store.endSession() }
         }
@@ -221,6 +223,7 @@ final class GlassPanelSurface<Content: View>: NSView {
     @objc private func openMain() { showMain() }
 
     func showMain() {
+        pasteCoordinator.captureTarget()
         if !pinned { quick?.orderOut(nil) }
         if main?.isVisible != true && main?.isMiniaturized != true {
             showPage(.history)
@@ -252,6 +255,7 @@ final class GlassPanelSurface<Content: View>: NSView {
 
     private func toggleQuick() {
         if quick?.isVisible == true { quick?.orderOut(nil); return }
+        pasteCoordinator.captureTarget()
         guard status.button?.window != nil else { return }
         if greeting.isEmpty { greeting = greetings.randomElement() ?? "茶还温着。" }
         let panel = quick ?? QuickPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -307,6 +311,13 @@ final class GlassPanelSurface<Content: View>: NSView {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        refreshPasteAuthorization()
+    }
+
+    func refreshPasteAuthorization() {
+        lastAuthorizationCheck = Date()
+        let authorized = PasteCoordinator.authorized
+        if pasteAuthorized != authorized { pasteAuthorized = authorized }
         refreshPasteMonitor()
     }
 
@@ -345,6 +356,10 @@ final class GlassPanelSurface<Content: View>: NSView {
     }
 
     private func tick() {
+        if page == .settings, main?.isVisible == true, main?.isMiniaturized == false,
+           Date().timeIntervalSince(lastAuthorizationCheck) >= 1 {
+            refreshPasteAuthorization()
+        }
         if store.poll() {
             pasteCoordinator.cancel()
             pendingManualCount = nil
@@ -441,9 +456,15 @@ final class GlassPanelSurface<Content: View>: NSView {
         } else {
             hideToast()
             closePreview()
+            // A nonactivating panel can own keyboard focus while the target app is
+            // still reported as active. Release that focus before sending any keys.
+            if let quick, quick.isVisible {
+                quick.orderOut(nil)
+                if pinned { quick.orderFrontRegardless() }
+            }
             pasteCoordinator.paste(changeCount: count) { [weak self] sent in
                 guard let self, NSPasteboard.general.changeCount == count else { return }
-                if !self.pinned { self.quick?.orderOut(nil) }
+                self.refreshPasteAuthorization()
                 self.showToast(sent ? "已发送粘贴" : "已复制，请按 ⌘+V 粘贴")
             }
         }
@@ -477,7 +498,7 @@ final class GlassPanelSurface<Content: View>: NSView {
 
     func authorizePaste() {
         PasteCoordinator.requestAuthorization()
-        refreshPasteMonitor()
+        refreshPasteAuthorization()
     }
 
     func selectCard(_ clip: Clip, favorite: Bool) {
@@ -513,6 +534,7 @@ final class GlassPanelSurface<Content: View>: NSView {
         searchField?.abortEditing()
         updateSearchText("")
         page = destination
+        if destination == .settings { refreshPasteAuthorization() }
     }
 
     private var visibleHistory: [Clip] {

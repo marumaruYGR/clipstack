@@ -137,8 +137,7 @@ struct WorkspaceContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { WorkspaceBackdrop().ignoresSafeArea() }
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.regularMaterial)
+            WorkspaceHeaderMaterial()
                 .mask {
                     LinearGradient(stops: [
                         .init(color: .white, location: 0),
@@ -152,6 +151,18 @@ struct WorkspaceContent: View {
                 .accessibilityHidden(true)
         }
     }
+}
+
+private struct WorkspaceHeaderMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .titlebar
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 private struct WorkspaceBackdrop: View {
@@ -478,6 +489,8 @@ struct SettingsView: View {
                     Text("开启").tag(true)
                     Text("永久关闭").tag(false)
                 }
+                Text("除更新外，本软件离线运行，通知仅作为冷启动后的提示。包括更新提示在内，本软件绝无各种意义上的广告。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("点选粘贴方式", selection: $app.pasteMode) {
                     ForEach(PasteMode.allCases) { Text($0.title).tag($0) }
                 }
@@ -485,7 +498,9 @@ struct SettingsView: View {
                     Text("直接上屏会切回原应用并尝试粘贴，需要辅助功能授权。手动粘贴使用 ⌘+V。")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("授权直接上屏…", action: app.authorizePaste)
+                    if !app.pasteAuthorized {
+                        Button("授权直接上屏…", action: app.authorizePaste)
+                    }
                 }
                 LabeledContent("快捷收纳区快捷键") {
                     VStack(alignment: .trailing, spacing: 7) {
@@ -510,11 +525,11 @@ struct SettingsView: View {
                     VStack(alignment: .trailing, spacing: 6) {
                         Text(store.favoriteURL.path(percentEncoded: false))
                             .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                        Button("移动收藏夹…", action: app.moveFavorites)
-                        HStack {
+                        HStack(spacing: 8) {
+                            Button("移动…", action: app.moveFavorites)
+                            Button("导入") { app.openBackup(exporting: false) }
                             Button("导出") { app.openBackup(exporting: true) }
                                 .disabled(store.favorites.isEmpty || store.favoriteProblem != nil)
-                            Button("导入") { app.openBackup(exporting: false) }
                         }
                     }
                 }
@@ -524,14 +539,6 @@ struct SettingsView: View {
                 }
                 Text("换机或重装前可导出口令加密备份。导入时先验证口令，再确认合并，重复内容会跳过。")
                     .font(.caption).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("如果你希望漫游你的收藏夹，请将其移动到你的 iCloud 文件夹里")
-                    Text("本软件不负担你的 iCloud 套餐费用，请合理调配存储空间安排和资费计划。")
-                        .foregroundStyle(.secondary)
-                }
-                .font(.callout)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
             }
             Section("软件更新") {
                 UpdateSettingsView(service: app.updates, app: app)
@@ -543,9 +550,8 @@ struct SettingsView: View {
                     }
                     Text("剪栈是一款 macOS 原生剪贴板管理工具。刚复制过的内容随时能找回，反复要用的资料可以加密收藏，收藏的内容不会被系统检索到。")
                     aboutBullet("**历史记录** 自动收录剪栈运行时复制的文字、链接和图片，支持逐条删除和一键清空。退出剪栈后仍可找回本次登录的记录，注销或关机时清空。这里是“剪贴板的剪贴板”，你可以将需要的资料一次采撷至此，随后灵活取用。")
-                    aboutBullet("**收藏夹** 用来长期保存手动收藏的内容，重启后也能随时取用。材料模板、常用单位全称、视频导出参数、经常发送的二维码，都可以收藏起来，下次直接粘贴。这些资料加密保存，Spotlight 无法检索得到。如果你希望漫游这份文档，请将其存放至 iCloud 目录。")
+                    aboutBullet("**收藏夹** 用来长期保存手动收藏的内容，重启后也能随时取用。材料模板、常用单位全称、视频导出参数、经常发送的二维码，都可以收藏起来，下次直接粘贴。这些资料加密保存，Spotlight 无法检索得到。")
                     Button("点击查看使用手册", action: app.showManual).buttonStyle(.link)
-                    Button("通知设置…", action: SystemNotices.openSettings).buttonStyle(.link)
                     if let url = Bundle.main.url(forResource: "About", withExtension: "png"), let image = NSImage(contentsOf: url) {
                         Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: 480)
                             .accessibilityLabel("夕阳桥畔的灰手套驾驶员")
@@ -584,8 +590,6 @@ private struct UpdateSettingsView: View {
                     .disabled(service.checking || service.downloading)
                 Button("查看更新日志", action: app.showChangelog)
             }
-            Text("后台每天检查一次，有新版时发送系统通知。安装由你决定。")
-                .font(.caption).foregroundStyle(.secondary)
             if !service.checking && !service.message.isEmpty { Text(service.message).font(.callout) }
             if service.downloading { ProgressView(value: service.progress) }
             if service.available != nil {
